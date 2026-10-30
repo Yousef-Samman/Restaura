@@ -60,6 +60,46 @@ class LLM:
         return out
 
 
+    def run_tools(self, system: str, task: str, tools: list[dict], call, done, effort: str = "medium",
+                  max_turns: int = 12, max_tokens: int = 4000) -> list[dict] | None:
+        """A tool-use loop: Claude picks which tool to call next, `call(name, input)` runs it in code and returns
+        (result, ok), until `done()` is true or Claude stops. Returns the steps taken, or None when the API fails,
+        Claude stops early, or the turn budget runs out, so the caller can fall back to its rules."""
+        if not self.client:
+            return None
+        messages = [{"role": "user", "content": task}]
+        steps = []
+        for _ in range(max_turns):
+            try:
+                resp = self.client.beta.messages.create(
+                    model=self.model, max_tokens=max_tokens, system=system, messages=messages, tools=tools,
+                    output_config={"effort": effort}, betas=["server-side-fallback-2026-07-01"], fallbacks="default",
+                )
+            except anthropic.APIError as exc:
+                log.warning("Claude API error during a tool loop: %s", exc)
+                return None
+            uses = [b for b in resp.content if b.type == "tool_use"]
+            if not uses:
+                log.warning("Claude stopped without finishing (%s)", resp.stop_reason)
+                return None
+            messages.append({"role": "assistant", "content": resp.content})
+            results = []
+            for u in uses:
+                schema = next((t["input_schema"] for t in tools if t["name"] == u.name), None)
+                if schema is None or not _matches(schema, u.input):
+                    result, ok = "That call does not match the tool's input. Check the tool description and try again.", False
+                else:
+                    result, ok = call(u.name, u.input)
+                steps.append({"tool": u.name, "input": u.input, "ok": ok})
+                results.append({"type": "tool_result", "tool_use_id": u.id, "content": json.dumps(result, default=str),
+                                "is_error": not ok})
+            if done():
+                return steps
+            messages.append({"role": "user", "content": results})
+        log.warning("Claude used every turn without finishing")
+        return None
+
+
 _TYPES = {"object": dict, "array": list, "string": str, "integer": int, "number": (int, float), "boolean": bool,
           "null": type(None)}
 

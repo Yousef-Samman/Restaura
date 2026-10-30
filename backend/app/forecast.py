@@ -84,10 +84,11 @@ def forecast(db: Session, days: int = 7) -> dict:
     recipe = defaultdict(list)
     for r in db.scalars(select(RecipeLine)):
         recipe[r.menu_item_id].append((r.ingredient_id, r.qty))
-    need = defaultdict(float)
+    need, by_day = defaultdict(float), defaultdict(lambda: [0.0] * days)
     for (i, item_id), q in item_need.items():
         for ing_id, per in recipe[item_id]:
             need[ing_id] += q * per
+            by_day[ing_id][i] += q * per
     ingredients = []
     for ing in db.scalars(select(Ingredient).order_by(Ingredient.name)):
         week = need.get(ing.id, 0.0)
@@ -95,6 +96,7 @@ def forecast(db: Session, days: int = 7) -> dict:
         left = ing.on_hand / per_day if per_day > 0 else None
         ingredients.append({"id": ing.id, "name": ing.name, "unit": ing.unit, "need": round(week, 1), "on_hand": round(ing.on_hand, 1),
                             "short": round(max(week - ing.on_hand, 0), 1),
+                            "by_day": [round(x, 1) for x in by_day[ing.id]],
                             "runs_out": (today + dt.timedelta(days=math.floor(left))).isoformat() if left is not None and left < days else None})
     ingredients.sort(key=lambda r: (r["runs_out"] is None, r["runs_out"] or "", r["name"]))
     actual = [{"date": (today - dt.timedelta(days=k)).isoformat(), "sales": round(daily.get(today - dt.timedelta(days=k), 0), 2)} for k in range(14, 0, -1)]

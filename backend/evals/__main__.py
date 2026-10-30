@@ -86,6 +86,8 @@ def _carry_ai(results: dict, previous: dict) -> None:
             results["cashier"][scen]["methods"]["Restaura with Claude"] = ai
     if "with Claude" in previous.get("stock", {}):
         results["stock"]["with Claude"] = previous["stock"]["with Claude"]
+        if "busy_days_ahead" in previous["stock"]:
+            results["stock"]["busy_days_ahead"] = previous["stock"]["busy_days_ahead"]
     if "skipped" not in previous.get("invoice", {"skipped": 1}):
         results["invoice"] = previous["invoice"]
 

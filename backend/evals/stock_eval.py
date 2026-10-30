@@ -6,8 +6,9 @@
    delivery arrives, rounded up to 100 g/ml or 1 piece.
 2. 300 random stores: the agent must order every ingredient that needs it (recall), nothing that doesn't
    (precision), and enough that stock is back at par when the delivery arrives (sufficiency).
-3. With Claude: the order quantities stay the code's (Claude only writes the notes), every computed warning is
-   still in the briefing, and every number Claude writes is one from the facts it was given (no made-up numbers).
+3. With Claude (a tool-using agent): every quantity Claude didn't change is the code's, every change stays within
+   half to 1.5x the code's quantity and carries a reason, every computed warning is still in the briefing, and every
+   number Claude writes is one from the facts its tools returned (no made-up numbers).
 """
 import datetime as dt
 import json
@@ -82,8 +83,10 @@ def scenarios(llm) -> dict:
         _store(db, SCENARIO, LEAD, open_order={"Cream"}, no_recipe_item=True)
         summary = stock_agent.run(db, llm)
         got = _drafts(db)
-        right = sum(got.get(k) == v for k, v in EXPECTED.items())
-        wrong_qty = [f"{k[1]}: expected {v}, got {got[k]}" for k, v in EXPECTED.items() if k in got and got[k] != v]
+        changed = _changed(db)
+        right = sum(got.get(k) == v or (k in changed and _within(v, got[k])) for k, v in EXPECTED.items())
+        wrong_qty = [f"{k[1]}: expected {v}, got {got[k]}" for k, v in EXPECTED.items()
+                     if k in got and got[k] != v and not (k in changed and _within(v, got[k]))]
         missed = [k[1] for k in EXPECTED if k not in got]
         extra = [k[1] for k in got if k not in EXPECTED]
         text = " ".join(summary["warnings"])
@@ -93,10 +96,22 @@ def scenarios(llm) -> dict:
         out = {"source": summary["source"], "expected_lines": len(EXPECTED), "correct_lines": right,
                "accuracy": rate(right, len(EXPECTED)), "wrong_qty": wrong_qty, "missed": missed, "unneeded": extra,
                "warnings_expected": len(EXPECTED_WARNINGS), "warnings_found": len(warned),
-               "duplicate_orders_on_second_run": duplicates}
+               "duplicate_orders_on_second_run": duplicates,
+               "adjusted_by_agent": [f"{k[1]}: {EXPECTED.get(k)} -> {got[k]}" for k in changed if k in got],
+               "steps": [s["label"] for s in summary.get("steps", [])]}
         if summary["source"] == "ai":
             out["ungrounded_numbers"] = _ungrounded(db, summary)
         return out
+
+
+def _changed(db) -> set[tuple[str, str]]:
+    """Order lines the agent changed, with the reason it gave (the reason is on the line the manager sees)."""
+    return {(po.supplier.name, l.ingredient.name) for po in db.scalars(select(PurchaseOrder).where(PurchaseOrder.status == "draft"))
+            for l in po.lines if "The agent changed" in (l.reason or "") and l.reason.split(":")[-1].strip()}
+
+
+def _within(code_qty: float, qty: float) -> bool:
+    return code_qty * 0.5 - 1e-6 <= qty <= code_qty * 1.5 + 1e-6
 
 
 def _numbers(text: str) -> set[float]:
@@ -106,13 +121,47 @@ def _numbers(text: str) -> set[float]:
 def _ungrounded(db, summary) -> list[str]:
     """Numbers in Claude's briefing that are not in the facts it was given (small counts up to 10 are allowed,
     as are 7, used in 'the last 7 days')."""
-    facts = json.dumps([r for r in stock_agent.stock_report(db)]) + " ".join(
-        f"{l.qty} {l.reason}" for po in db.scalars(select(PurchaseOrder)) for l in po.lines)
+    lines = [l for po in db.scalars(select(PurchaseOrder)) for l in po.lines]
+    code_part = [(l.reason or "").split(" The agent changed")[0] for l in lines]
+    agent_part = [(l.reason or "").split(" The agent changed")[1].split(":", 1)[-1] for l in lines if " The agent changed" in (l.reason or "")]
+    facts = (json.dumps(stock_agent.stock_report(db)) + json.dumps(stock_agent.forecast.forecast(db), default=str)
+             + " ".join(f"{l.qty} {c}" for l, c in zip(lines, code_part)))
     allowed = _numbers(facts)
     allowed |= {round(x, 1) for x in allowed} | {float(round(x)) for x in allowed}
     notes = " ".join(po.note or "" for po in db.scalars(select(PurchaseOrder).where(PurchaseOrder.status == "draft")))
-    text = " ".join([summary["headline"], notes, *summary["warnings"]])
+    text = " ".join([summary["headline"], notes, *summary["warnings"], *agent_part])
     return sorted({str(n) for n in _numbers(text) if n > 10 and n not in allowed})
+
+
+def busy_days_ahead(llm, runs: int = 3) -> dict:
+    """Adaptation: three days a week sell three times a normal day, and they are the three days right after the
+    delivery arrives. The code's quantity uses the plain 7-day average, so what arrives (about 7,900 g with what is
+    left) does not cover the 9,000 g those three days need, and flour runs out before a next order could arrive.
+    Claude may raise it (within limits, with a reason) and must never lower it. Several runs, since Claude varies."""
+    today = dt.date.today()
+    busy = {(today + dt.timedelta(days=k)).weekday() for k in (2, 3, 4)}
+    raised = lowered = out_of_range = 0
+    for _ in range(runs):
+        with fresh_db() as db:
+            sup = Supplier(name="Bakery Supply", email="bakery@example.com", lead_days=2)
+            ing = Ingredient(name="Flour", unit="g", unit_cost=0.01, min_level=2000, par_level=6000, on_hand=2500, supplier=sup)
+            item = MenuItem(name="Crepe", category="Test", price=20)
+            item.recipe = [RecipeLine(ingredient=ing, qty=100)]
+            db.add_all([sup, ing, item])
+            db.flush()
+            for k in range(1, 57):
+                d = today - dt.timedelta(days=k)
+                order = Order(business_date=d, source="history", total=0)
+                order.lines = [OrderLine(menu_item_id=item.id, qty=30 if d.weekday() in busy else 10, price=20)]
+                db.add(order)
+            db.commit()
+            code_qty = next(p["qty"] for p in stock_agent.plan_reorders(db))
+            stock_agent.run(db, llm)
+            qty = _drafts(db).get(("Bakery Supply", "Flour"))
+            raised += qty is not None and qty > code_qty
+            lowered += qty is not None and qty < code_qty
+            out_of_range += qty is None or not _within(code_qty, qty)
+    return {"runs": runs, "code_qty": code_qty, "raised": raised, "lowered": lowered, "out_of_range_or_missing": out_of_range}
 
 
 def properties(n: int = 300, seed: int = 9) -> dict:
@@ -155,12 +204,17 @@ def run(llm=None, log=print) -> dict:
     out = {"rules": scenarios(no_llm()), "random_stores": properties()}
     if llm:
         out["with Claude"] = scenarios(llm)
+        out["busy_days_ahead"] = busy_days_ahead(llm)
     for k in ("rules", "with Claude"):
         if k in out:
             r = out[k]
             log(f"  stock / scenarios ({k}, source {r['source']}): {r['correct_lines']}/{r['expected_lines']} order lines right, "
                 f"{r['warnings_found']}/{r['warnings_expected']} warnings, {r['duplicate_orders_on_second_run']} duplicates"
                 + (f", ungrounded numbers: {r['ungrounded_numbers'] or 'none'}" if "ungrounded_numbers" in r else ""))
+    if "busy_days_ahead" in out:
+        b = out["busy_days_ahead"]
+        log(f"  stock / busy days ahead (Claude): raised {b['raised']}/{b['runs']}, lowered {b['lowered']}, "
+            f"out of range or missing {b['out_of_range_or_missing']}")
     p = out["random_stores"]
     log(f"  stock / {p['stores']} random stores: recall {p['recall']:.1%}, precision {p['precision']:.1%}, "
         f"too small {p['orders_too_small']}, too large {p['orders_too_large']}")

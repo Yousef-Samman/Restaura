@@ -11,7 +11,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from . import auth, evaluation, finance, forecast, mailer, routines, sales_report, staff as staffing, stock
+from . import nightly
 from .agents import cashier, invoice, overview, stock_agent
+from .agents.stock_agent import split_change
 from .agents.llm import LLM
 from .config import Settings, get_settings
 from .db import Base, make_engine, make_sessionmaker
@@ -110,6 +112,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             seed(db)
     llm = LLM(settings)
     app = FastAPI(title="Restaura", version="0.1.0")
+    if settings.nightly_stock_check:
+        stop_nightly = nightly.start(Session_, llm, nightly.parse_time(settings.nightly_stock_check))
+        app.add_event_handler("shutdown", stop_nightly.set)
 
     def get_db():
         with Session_() as db:
@@ -220,7 +225,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "suggestions_shown": shown, "suggestions_accepted": accepted, "suggested_sales": round(addon_sales, 2),
                 # what still needs the manager: an ingredient with an order on the way is handled, unless it is below zero
                 "low_stock": sum(r["status"] == "negative" or (r["status"] == "low" and not r["on_order"]) for r in report),
-                "drafts": db.scalar(select(func.count(PurchaseOrder.id)).where(PurchaseOrder.status == "draft")) or 0}
+                "drafts": db.scalar(select(func.count(PurchaseOrder.id)).where(PurchaseOrder.status == "draft")) or 0,
+                # drafts where the stock agent changed a quantity: the manager should look at these first
+                "changed_drafts": sum(any(split_change(l.reason)[1] for l in po.lines)
+                                      for po in db.scalars(select(PurchaseOrder).where(PurchaseOrder.status == "draft")))}
 
     @app.post("/api/cashier/suggest")
     def suggest(cart: Cart, db: Session = Depends(get_db), _=Depends(staff)):
@@ -446,8 +454,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"id": po.id, "supplier": po.supplier.name, "status": po.status, "note": po.note,
                 "channel": po.supplier.channel, "whatsapp_link": whatsapp_link(po) if po.status == "sent" else None,
                 "created_at": po.created_at.isoformat(), "sent_at": po.sent_at.isoformat() if po.sent_at else None,
+                "lead_days": po.supplier.lead_days, "changed": any(split_change(l.reason)[1] for l in po.lines),
                 "lines": [{"id": l.id, "ingredient_id": l.ingredient_id, "ingredient": l.ingredient.name,
-                           "unit": l.ingredient.unit, "qty": l.qty, "reason": l.reason,
+                           "unit": l.ingredient.unit, "qty": l.qty, "reason": split_change(l.reason)[0],
+                           "change": split_change(l.reason)[1],
                            "est_cost": round(l.qty * l.ingredient.unit_cost, 2)} for l in po.lines]}
 
     def get_po(db: Session, po_id: int) -> PurchaseOrder:

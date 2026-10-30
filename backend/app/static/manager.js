@@ -18,7 +18,9 @@ const MORE = [
   { id: "staff", label: "Staff", icon: "people", sub: "Shifts, attendance and hours" },
   { id: "evaluation", label: "Agent evaluation", icon: "gauge", sub: "How the AI agents score on data they have never seen" },
 ];
-const SECTION = (id) => [...TABS, ...MORE].find((t) => t.id === id);
+// pages reached from a link, not from the tab bar; they show a back arrow
+const SUB = [{ id: "steps", label: "Stock agent", icon: "stock", back: "today" }];
+const SECTION = (id) => [...TABS, ...MORE, ...SUB].find((t) => t.id === id);
 let expDays = 30;
 let tab = location.hash.slice(1) || "today";
 let status = {};
@@ -43,9 +45,9 @@ function toast(msg, err = false) {
 
 async function renderTabs() {
   const today = await api("/api/today").catch(() => ({}));
-  const active = MORE.some((m) => m.id === tab) ? "more" : tab;
+  const active = MORE.some((m) => m.id === tab) ? "more" : SUB.find((x) => x.id === tab)?.back || tab;
   $("tabs").innerHTML = TABS.map((t) => `<button data-tab="${t.id}" ${t.id === active ? 'aria-current="page"' : ""}>${ICONS[t.icon]}${t.label}
-    ${t.id === "orders" && today.drafts ? `<span class="dot">${today.drafts}</span>` : ""}${t.id === "stock" && today.low_stock ? `<span class="dot">${today.low_stock}</span>` : ""}</button>`).join("");
+    ${t.id === "orders" && today.changed_drafts ? `<span class="dot warn" aria-label="An order needs a look">!</span>` : t.id === "orders" && today.drafts ? `<span class="dot">${today.drafts}</span>` : ""}${t.id === "stock" && today.low_stock ? `<span class="dot">${today.low_stock}</span>` : ""}</button>`).join("");
   $("tabs").querySelectorAll("button").forEach((b) => (b.onclick = () => go(b.dataset.tab)));
 }
 
@@ -54,21 +56,40 @@ function go(t) { tab = t; location.hash = t; render(); window.scrollTo(0, 0); }
 async function render() {
   if (!SECTION(tab)) tab = "today";
   $("title").textContent = SECTION(tab).label;
+  const sub = SUB.find((x) => x.id === tab);
+  $("back").hidden = !sub;
+  $("back").onclick = () => go(sub.back);
   document.body.classList.toggle("has-hero", ["today", "forecast", "evaluation"].includes(tab));
   renderTabs();
   const view = $("view");
-  try { view.innerHTML = await VIEWS[tab](); BIND[tab]?.(); }
+  try { view.innerHTML = await VIEWS[tab](); BIND[tab]?.(); view.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go))); }
   catch (e) { view.innerHTML = `<div class="panel section">${esc(e.message)}</div>`; }
 }
 
-function agentCard(run) {
-  const when = run ? new Date(run.at + "Z").toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }) : "";
+const timeOf = (iso) => new Date(iso + "Z").toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit" });
+
+// A draft order the stock agent changed: shown orange on Today so the manager looks at this one first.
+function orderTab(po) {
+  const lines = po.lines.filter((l) => l.change);
+  const cost = po.lines.reduce((s, l) => s + l.est_cost, 0);
+  return `<div class="order-tab" role="alert">
+    <div class="ot-head"><span class="ot-ic">${ICONS.bang}</span><b>Check before approving</b></div>
+    <div class="ot-main"><b class="sup">${esc(po.supplier)}</b><span class="mut">Delivers in ${po.lead_days} ${po.lead_days === 1 ? "day" : "days"} · ${sar(cost)}</span></div>
+    ${lines.map((l) => `<div class="ot-line"><span class="fl">${esc(l.ingredient)}</span><span class="chg"><s>${fmt(l.change.from)} ${l.unit}</s><i>→</i><b>${fmt(l.change.to)} ${l.unit}</b></span></div>
+      <p class="ot-why">${esc(l.change.reason)}</p>`).join("")}
+    <button class="brass full" data-go="orders">Review this order</button>
+  </div>`;
+}
+
+function agentCard(run, drafts = []) {
+  const steps = run?.steps?.length || 0;
   return `<div class="agent">
-    <div class="head">${ICONS.spark}Stock-to-order agent</div>
-    <div class="headline">${run ? esc(run.headline) : "No stock check yet today. Run one after closing, or any time."}</div>
+    <div class="agent-h"><span class="badge">${ICONS.agent}</span><div><b>Stock agent</b><small>${run ? `Finished ${timeOf(run.at)} · ${steps} steps · ${run.source === "ai" ? "by Claude" : "rules mode"}` : "Not run yet"}</small></div></div>
+    <p class="big">${run ? esc(run.headline) : "No stock check yet today. Run one after closing, or any time."}</p>
+    ${drafts.filter((p) => p.changed).map(orderTab).join("")}
     ${(run?.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
-    ${run ? `<div class="meta">Last check ${when} · ${run.source === "ai" ? "written by Claude" : "rules mode"}</div>` : ""}
-    <button id="run-agent">Run stock check now</button>
+    ${steps ? `<button class="link" data-go="steps">See what the agent did</button>` : ""}
+    <button class="secondary-btn" id="run-agent">Run stock check now</button>
   </div>`;
 }
 
@@ -281,30 +302,32 @@ const VIEWS = {
   },
 
   async today() {
-    const [t, ins, runs, devs, ov] = await Promise.all([api("/api/today"), api("/api/insights/cashier"), api("/api/agents/runs"), api("/api/devices"), api("/api/overview")]);
+    const [t, ins, runs, devs, ov, pos] = await Promise.all([api("/api/today"), api("/api/insights/cashier"), api("/api/agents/runs"), api("/api/devices"), api("/api/overview"), api("/api/purchase-orders")]);
+    const drafts = pos.filter((p) => p.status === "draft");
     const brief = runs.find((r) => r.agent === "overview");
     const rate = ins.acceptance_rate == null ? "–" : `${Math.round(ins.acceptance_rate * 100)}%`;
-    return `<div class="hero">
+    const needs = ov.priorities.filter((p) => !(p.go === "orders" && drafts.length));
+    return `<div class="section first">${agentCard(runs.find((r) => r.agent === "stock"), drafts)}</div>
+      ${drafts.length ? `<div class="section"><div class="panel"><div class="po-sum"><div><b>${drafts.length} supplier ${drafts.length === 1 ? "order" : "orders"} waiting</b><span class="muted">${sar(drafts.reduce((a, p) => a + p.lines.reduce((s2, l) => s2 + l.est_cost, 0), 0))} in total</span></div><button class="brass" data-go="orders">Review</button></div></div></div>` : ""}
+      <div class="section"><h2>Needs you</h2><div class="panel">
+        ${needs.map((p) => `<button class="more-row need ${p.level}" ${p.go ? `data-go="${p.go}"` : "disabled"}><span class="lvl"></span><span>${esc(p.text)}</span>${p.go ? ICONS.chevron : ""}</button>`).join("")}
+      </div></div>
+      <div class="section"><div class="agent">
+        <div class="agent-h"><span class="badge">${ICONS.agent}</span><div><b>Manager overview</b><small>${brief ? `Briefed ${timeOf(brief.at)} · ${brief.source === "ai" ? "by Claude" : "rules mode"}` : "Not run yet"}</small></div></div>
+        <p class="big">${brief ? esc(brief.headline) : "Tap below for a briefing across sales, stock, orders and costs."}</p>
+        ${(brief?.points || []).map((p) => `<p class="pt">${esc(p)}</p>`).join("")}
+        <button class="secondary-btn" id="run-overview">Brief me now</button>
+      </div></div>
+      <div class="section"><div class="hero flat">
         <div><div class="label">Sales</div><div class="value num">${sar(t.sales)}</div></div>
         <div><div class="label">Orders</div><div class="value num">${t.orders}</div></div>
         <div><div class="label">Avg. ticket</div><div class="value num">${sar(t.avg_ticket)}</div></div>
         <div><div class="label">Helper sales</div><div class="value num">${sar(t.suggested_sales)}</div></div>
-      </div>
-      <div class="section"><div class="agent">
-        <div class="head">${ICONS.spark}Manager overview</div>
-        <div class="headline">${brief ? esc(brief.headline) : "Tap below for a briefing across sales, stock, orders and costs."}</div>
-        ${(brief?.points || []).map((p) => `<div class="meta" style="font-size:14px;color:#fff;opacity:.9">• ${esc(p)}</div>`).join("")}
-        ${brief ? `<div class="meta">Last briefing ${new Date(brief.at + "Z").toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} · ${brief.source === "ai" ? "written by Claude" : "rules mode"}</div>` : ""}
-        <button id="run-overview">Brief me now</button>
       </div></div>
-      <div class="section"><h2>Needs you</h2><div class="panel">
-        ${ov.priorities.map((p) => `<button class="more-row need ${p.level}" ${p.go ? `data-go="${p.go}"` : "disabled"}><span class="lvl"></span><span>${esc(p.text)}</span>${p.go ? ICONS.chevron : ""}</button>`).join("")}
-      </div></div>
-      <div class="section"><div class="hero" style="margin:0">
+      <div class="section"><div class="hero flat">
         <div><div class="label">Forecast tomorrow</div><div class="value num">${sar(ov.facts.forecast_tomorrow)}</div></div>
         <div><div class="label">Profit, 7 days</div><div class="value num" style="color:${ov.facts.profit_7d >= 0 ? "var(--ok)" : "var(--bad)"}">${sar(ov.facts.profit_7d)}</div></div>
       </div></div>
-      <div class="section">${agentCard(runs.find((r) => r.agent === "stock"))}</div>
       <div class="section"><h2>Cashier helper</h2><div class="panel">
         <div class="hero" style="margin:0;box-shadow:none;padding:0;grid-template-columns:repeat(3,minmax(0,1fr))">
           <div><div class="label">Shown</div><div class="value num">${ins.shown}</div></div>
@@ -349,26 +372,51 @@ const VIEWS = {
   },
 
   async orders() {
-    const pos = await api("/api/purchase-orders");
-    if (!pos.length) return `<div class="section">${agentCard(null)}</div><div class="section panel empty">No supplier orders yet.</div>`;
+    const [pos, runs] = await Promise.all([api("/api/purchase-orders"), api("/api/agents/runs")]);
+    const run = runs.find((r) => r.agent === "stock");
+    if (!pos.length) return `<div class="section">${agentCard(run)}</div><div class="section panel empty">No supplier orders yet.</div>`;
+    const lineHtml = (l, draft) => {
+      const input = `<input class="qty num" type="number" min="0" step="any" value="${l.qty}" data-line="${l.id}" aria-label="Quantity of ${esc(l.ingredient)}"><span class="u">${l.unit}</span>`;
+      if (draft && l.change) return `<div class="item-card changed">
+        <div class="item-top"><span class="iname">${esc(l.ingredient)}</span><span class="tag alert-tag">${l.change.to >= l.change.from ? "Raised" : "Lowered"} by agent</span></div>
+        <div class="amounts"><div class="was"><span>Rules said</span><s>${fmt(l.change.from)} ${l.unit}</s></div><span class="arr">→</span><div class="now"><span>Order</span><div class="inp">${input}</div></div></div>
+        <p class="because">${esc(l.change.reason)}</p>
+        <button class="link undo" data-undo="${l.change.from}" data-line="${l.id}">Change it back to ${fmt(l.change.from)} ${l.unit}</button></div>`;
+      return `<div class="ln"><span class="n">${esc(l.ingredient)}</span><span class="q">${draft ? input : `<b class="num">${fmt(l.qty)}</b> ${l.unit}`}</span>
+        ${draft ? `<details class="why-d"><summary>Why this amount</summary><p>${esc(l.reason || "")}</p></details>` : ""}</div>`;
+    };
     const card = (po) => {
       const draft = po.status === "draft";
       const cost = po.lines.reduce((s, l) => s + l.est_cost, 0);
-      return `<div class="panel po" data-id="${po.id}">
-        <div class="top"><span class="sup">${esc(po.supplier)}</span><span class="muted num">#${po.id}</span><span class="chip ${po.status}">${po.status}</span></div>
-        ${po.note ? `<div class="note">${ICONS.spark.replace("<svg", '<svg width="14" style="vertical-align:-2px;margin-right:4px"')}${esc(po.note)}</div>` : ""}
-        <table>${po.lines.map((l) => `<tr><td>${esc(l.ingredient)}</td><td class="q">${draft
-          ? `<input class="qty num" type="number" min="0" step="any" value="${l.qty}" data-line="${l.id}" aria-label="Quantity of ${esc(l.ingredient)}"> ${l.unit}`
-          : `<b class="num">${fmt(l.qty)}</b> ${l.unit}`}</td></tr>`).join("")}
-          <tr><td class="muted">Estimated cost</td><td class="q"><b class="num">${sar(cost)}</b></td></tr></table>
-        ${draft ? `<div class="btns"><button class="approve">Approve and send</button><button class="reject">Reject</button></div>` : ""}
+      return `<div class="panel po${po.changed && draft ? " flagged" : ""}" data-id="${po.id}">
+        <div class="po-head"><div><b>${esc(po.supplier)}</b><small>Order #${po.id} · drafted by the stock agent</small></div><span class="chip ${po.status}">${draft ? "Needs approval" : po.status}</span></div>
+        <dl class="facts"><div><dt>Delivery</dt><dd>${po.lead_days} ${po.lead_days === 1 ? "day" : "days"}</dd></div><div><dt>Items</dt><dd>${po.lines.length}</dd></div><div><dt>Est. cost</dt><dd>${sar(cost)}</dd></div></dl>
+        ${po.lines.map((l) => lineHtml(l, draft)).join("")}
+        ${draft && po.note ? `<details class="why-d"><summary>What the agent said about this order</summary><p>${esc(po.note)}</p></details>` : ""}
+        ${draft ? `<div class="row"><button class="brass approve">Approve and send</button><button class="reject">Reject</button></div>` : ""}
         ${draft && po.channel === "whatsapp" ? '<div class="muted" style="font-size:13px;margin-top:8px">This supplier takes orders on WhatsApp.</div>' : ""}
-        ${po.status === "sent" ? `<div class="btns">${po.whatsapp_link ? `<a class="wa" href="${esc(po.whatsapp_link)}" target="_blank" rel="noopener">${ICONS.whatsapp}Send on WhatsApp</a>` : ""}<button class="approve receive">Mark as delivered</button></div>` : ""}
+        ${po.status === "sent" ? `<div class="btns">${po.whatsapp_link ? `<a class="wa" href="${esc(po.whatsapp_link)}" target="_blank" rel="noopener">${ICONS.whatsapp}Send on WhatsApp</a>` : ""}<button class="brass approve receive">Mark as delivered</button></div>` : ""}
       </div>`;
     };
-    const drafts = pos.filter((p) => p.status === "draft"), rest = pos.filter((p) => p.status !== "draft");
-    return `${drafts.length ? `<div class="section"><h2>Waiting for your approval</h2>${drafts.map(card).join("")}</div>` : `<div class="section">${agentCard(null)}</div>`}
+    const drafts = pos.filter((p) => p.status === "draft").sort((a, b) => b.changed - a.changed), rest = pos.filter((p) => p.status !== "draft");
+    return `${drafts.length ? `<div class="section first"><h2>Waiting for your approval</h2>${drafts.map(card).join("")}</div>` : `<div class="section first">${agentCard(run)}</div>`}
       ${rest.length ? `<div class="section"><h2>History</h2>${rest.map(card).join("")}</div>` : ""}`;
+  },
+
+  async steps() {
+    const [runs, pos] = await Promise.all([api("/api/agents/runs"), api("/api/purchase-orders")]);
+    const run = runs.find((r) => r.agent === "stock");
+    if (!run?.steps?.length) return `<div class="section first panel empty">No stock check has run yet.</div>`;
+    const drafts = pos.filter((p) => p.status === "draft");
+    const target = drafts.find((p) => p.changed) || drafts[0];
+    const stepHtml = (s) => {
+      const changed = /^(Changed|Raised|Lowered)/.test(s.label), bad = !s.ok;
+      return `<li class="step${changed ? " chg" : ""}${bad ? " bad" : ""}"><span class="dot${changed || bad ? " warn" : ""}">${changed || bad ? ICONS.bang : ICONS.check}</span>
+        <div><b>${esc(s.label)}</b>${s.detail ? (changed ? `<div class="note">${esc(s.detail)}</div>` : `<span>${esc(s.detail)}</span>`) : ""}</div></li>`;
+    };
+    return `<div class="section first"><div class="panel"><div class="muted" style="font-size:13px;margin-bottom:12px">${run.steps.length} steps · ${timeOf(run.at)} · ${run.source === "ai" ? "decided by Claude" : "run by the rules"}</div>
+        <ol class="steps">${run.steps.map(stepHtml).join("")}</ol></div></div>
+      <div class="next">${target ? `<button class="brass full" data-go="orders">Review the order · ${esc(target.supplier)}</button><small>Opens the Orders page</small>` : `<button class="brass full" data-go="today">Back to Today</button>`}</div>`;
   },
 
   async stock() {
@@ -539,6 +587,10 @@ const BIND = {
   },
   orders() {
     bindAgent();
+    document.querySelectorAll("[data-undo]").forEach((b) => (b.onclick = () => {
+      const input = document.querySelector(`input.qty[data-line="${b.dataset.line}"]`);
+      input.value = b.dataset.undo; toast("Set back to the rules' amount");
+    }));
     document.querySelectorAll(".po").forEach((el) => {
       const id = el.dataset.id;
       el.querySelector(".approve:not(.receive)")?.addEventListener("click", async (ev) => {
@@ -598,6 +650,7 @@ const BIND = {
 (async () => {
   status = await api("/api/status");
   $("store").textContent = `${status.store} · ${new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}`;
+  $("back-icon").innerHTML = ICONS.back;
   $("ai-badge").textContent = status.ai_enabled ? "AI on" : "Rules mode";
   $("ai-badge").classList.toggle("on", status.ai_enabled);
   window.onhashchange = () => { const t = location.hash.slice(1); if (t && t !== tab && VIEWS[t]) { tab = t; render(); } };
