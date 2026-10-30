@@ -14,7 +14,10 @@ log = logging.getLogger("restaura.llm")
 class LLM:
     def __init__(self, settings: Settings):
         self.model = settings.model
-        self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key) if settings.anthropic_api_key else None
+        # A short timeout and one retry: a slow or unreachable API must not keep the cashier waiting,
+        # the rule-based path answers instead.
+        self.client = (anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=settings.llm_timeout, max_retries=1)
+                       if settings.anthropic_api_key else None)
 
     @property
     def enabled(self) -> bool:
@@ -39,11 +42,47 @@ class LLM:
         except anthropic.APIStatusError as exc:
             log.warning("Claude API error %s: %s", exc.status_code, exc.message)
             return None
+        except anthropic.APIError as exc:
+            log.warning("Claude API error: %s", exc)
+            return None
         if resp.stop_reason in ("refusal", "max_tokens"):
             log.warning("Claude stopped with %s", resp.stop_reason)
             return None
         text = next((b.text for b in resp.content if b.type == "text"), None)
-        return json.loads(text) if text else None
+        try:
+            out = json.loads(text) if text else None
+        except ValueError:
+            log.warning("Claude returned text that is not JSON")
+            return None
+        if not _matches(schema, out):
+            log.warning("Claude's answer does not match the expected shape")
+            return None
+        return out
+
+
+_TYPES = {"object": dict, "array": list, "string": str, "integer": int, "number": (int, float), "boolean": bool,
+          "null": type(None)}
+
+
+def _matches(schema: dict, value) -> bool:
+    """Checks the parts of JSON Schema the agents use (type, required, properties, items, enum, anyOf),
+    so an answer of the wrong shape falls back to rules instead of breaking the agent."""
+    if "anyOf" in schema:
+        return any(_matches(s, value) for s in schema["anyOf"])
+    if "enum" in schema and value not in schema["enum"]:
+        return False
+    types = schema.get("type")
+    if types:
+        types = types if isinstance(types, list) else [types]
+        if not any(isinstance(value, _TYPES[t]) and not (t in ("integer", "number") and isinstance(value, bool)) for t in types):
+            return False
+    if isinstance(value, dict):
+        if any(k not in value for k in schema.get("required", [])):
+            return False
+        return all(_matches(schema["properties"][k], v) for k, v in value.items() if k in schema.get("properties", {}))
+    if isinstance(value, list) and "items" in schema:
+        return all(_matches(schema["items"], v) for v in value)
+    return True
 
 
 def image_block(data: bytes, media_type: str) -> dict:

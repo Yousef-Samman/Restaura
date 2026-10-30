@@ -1,0 +1,377 @@
+{
+ "run": {
+  "at": "2026-10-30T14:43:40+00:00",
+  "ai_model": "claude-haiku-5-5",
+  "seconds": 200
+ },
+ "cashier": {
+  "app sample data": {
+   "held_out_orders_days": 7,
+   "distinct_carts": 31,
+   "methods": {
+    "Best sellers (baseline)": {
+     "cases": 272,
+     "hit_at_2": 0.6948529411764706,
+     "precision": 0.3805147058823529
+    },
+    "Restaura rules (app)": {
+     "cases": 272,
+     "hit_at_2": 0.6911764705882353,
+     "precision": 0.3694852941176471
+    },
+    "Ablation: order history only": {
+     "cases": 272,
+     "hit_at_2": 0.6838235294117647,
+     "precision": 0.36580882352941174
+    },
+    "Ablation: pairing rules only": {
+     "cases": 272,
+     "hit_at_2": 0.6102941176470589,
+     "precision": 0.3088235294117647
+    },
+    "Restaura with Claude": {
+     "cases": 272,
+     "hit_at_2": 0.6911764705882353,
+     "precision": 0.37222222222222223,
+     "carts": 31,
+     "fell_back_to_rules": 0
+    }
+   }
+  },
+  "changed habits": {
+   "held_out_orders_days": 7,
+   "distinct_carts": 26,
+   "methods": {
+    "Best sellers (baseline)": {
+     "cases": 306,
+     "hit_at_2": 0.6209150326797386,
+     "precision": 0.3758169934640523
+    },
+    "Restaura rules (app)": {
+     "cases": 306,
+     "hit_at_2": 0.8660130718954249,
+     "precision": 0.5179738562091504
+    },
+    "Ablation: order history only": {
+     "cases": 306,
+     "hit_at_2": 0.8496732026143791,
+     "precision": 0.5098039215686274
+    },
+    "Ablation: pairing rules only": {
+     "cases": 306,
+     "hit_at_2": 0.40522875816993464,
+     "precision": 0.20751633986928106
+    },
+    "Restaura with Claude": {
+     "cases": 306,
+     "hit_at_2": 0.8823529411764706,
+     "precision": 0.5261437908496732,
+     "carts": 26,
+     "fell_back_to_rules": 0
+    }
+   }
+  }
+ },
+ "forecast": {
+  "synthetic store": {
+   "validation": {
+    "days_of_history": 140,
+    "forecast_origins": 42,
+    "horizon_days": 7,
+    "methods": {
+     "Yesterday's sales (baseline)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 1162.9,
+      "mape": 0.3128420357140789
+     },
+     "Last 7-day average (baseline)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 889.4,
+      "mape": 0.2359825864012102
+     },
+     "Same weekday last week (baseline)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 414.5,
+      "mape": 0.10114659153773008
+     },
+     "Previous app method: same weekday, 4-week average": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 334.9,
+      "mape": 0.079415635206949
+     },
+     "Restaura: recent level x weekday, 8 weeks (app)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 327.9,
+      "mape": 0.0801311272663024
+     },
+     "Ablation: weekday pattern from 4 weeks": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 353.4,
+      "mape": 0.08659377388143731
+     },
+     "Ablation: no recent level (same weekday, 8-week average)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 388.5,
+      "mape": 0.09145622087182381
+     }
+    }
+   },
+   "test": {
+    "days_of_history": 182,
+    "forecast_origins": 42,
+    "horizon_days": 7,
+    "methods": {
+     "Yesterday's sales (baseline)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 1063.3,
+      "mape": 0.2607113387106583
+     },
+     "Last 7-day average (baseline)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 876.1,
+      "mape": 0.21446941520273002
+     },
+     "Same weekday last week (baseline)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 327.6,
+      "mape": 0.0782261349479827
+     },
+     "Previous app method: same weekday, 4-week average": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 338.4,
+      "mape": 0.08014823311155145
+     },
+     "Restaura: recent level x weekday, 8 weeks (app)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 279.4,
+      "mape": 0.06732162583953394
+     },
+     "Ablation: weekday pattern from 4 weeks": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 324.4,
+      "mape": 0.07675067085699763
+     },
+     "Ablation: no recent level (same weekday, 8-week average)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 359.3,
+      "mape": 0.0874049080673866
+     }
+    }
+   }
+  },
+  "U Walk (real)": {
+   "validation": {
+    "days_of_history": 80,
+    "forecast_origins": 42,
+    "horizon_days": 7,
+    "methods": {
+     "Yesterday's sales (baseline)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.6217657953233321
+     },
+     "Last 7-day average (baseline)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.5406085862438813
+     },
+     "Same weekday last week (baseline)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.36141158710653193
+     },
+     "Previous app method: same weekday, 4-week average": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.3641979990392344
+     },
+     "Restaura: recent level x weekday, 8 weeks (app)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.3380259381294739
+     },
+     "Ablation: weekday pattern from 4 weeks": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.34968607336795043
+     },
+     "Ablation: no recent level (same weekday, 8-week average)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.3169268751999122
+     }
+    }
+   },
+   "test": {
+    "days_of_history": 122,
+    "forecast_origins": 42,
+    "horizon_days": 7,
+    "methods": {
+     "Yesterday's sales (baseline)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.34011973290375996
+     },
+     "Last 7-day average (baseline)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.26244116398606454
+     },
+     "Same weekday last week (baseline)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.23820033866073845
+     },
+     "Previous app method: same weekday, 4-week average": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.2643987284741477
+     },
+     "Restaura: recent level x weekday, 8 weeks (app)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.20783944162045945
+     },
+     "Ablation: weekday pattern from 4 weeks": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.22071954136008815
+     },
+     "Ablation: no recent level (same weekday, 8-week average)": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.2473118636480127
+     }
+    }
+   }
+  }
+ },
+ "stock": {
+  "rules": {
+   "source": "rules",
+   "expected_lines": 6,
+   "correct_lines": 6,
+   "accuracy": 1.0,
+   "wrong_qty": [],
+   "missed": [],
+   "unneeded": [],
+   "warnings_expected": 2,
+   "warnings_found": 2,
+   "duplicate_orders_on_second_run": 0
+  },
+  "random_stores": {
+   "stores": 300,
+   "needed_an_order": 162,
+   "recall": 1.0,
+   "precision": 1.0,
+   "unneeded_orders": 0,
+   "orders_too_small": 0,
+   "orders_too_large": 0
+  },
+  "with Claude": {
+   "source": "ai",
+   "expected_lines": 6,
+   "correct_lines": 6,
+   "accuracy": 1.0,
+   "wrong_qty": [],
+   "missed": [],
+   "unneeded": [],
+   "warnings_expected": 2,
+   "warnings_found": 2,
+   "duplicate_orders_on_second_run": 0,
+   "ungrounded_numbers": []
+  }
+ },
+ "invoice": {
+  "clean": {
+   "invoices": 3,
+   "lines": 12,
+   "unreadable_invoices": 0,
+   "line_found": 1.0,
+   "quantity": 1.0,
+   "unit_price": 1.0,
+   "line_total": 1.0,
+   "ingredient_match": 1.0,
+   "unit_conversion": 1.0,
+   "invoice_total": 1.0,
+   "supplier_and_number": 1.0,
+   "invented_lines": 0
+  },
+  "blurry": {
+   "invoices": 3,
+   "lines": 12,
+   "unreadable_invoices": 0,
+   "line_found": 1.0,
+   "quantity": 1.0,
+   "unit_price": 1.0,
+   "line_total": 1.0,
+   "ingredient_match": 1.0,
+   "unit_conversion": 1.0,
+   "invoice_total": 1.0,
+   "supplier_and_number": 1.0,
+   "invented_lines": 0
+  },
+  "phone photo": {
+   "invoices": 3,
+   "lines": 12,
+   "unreadable_invoices": 0,
+   "line_found": 1.0,
+   "quantity": 1.0,
+   "unit_price": 1.0,
+   "line_total": 1.0,
+   "ingredient_match": 1.0,
+   "unit_conversion": 1.0,
+   "invoice_total": 1.0,
+   "supplier_and_number": 1.0,
+   "invented_lines": 0
+  },
+  "smudged quantity": {
+   "invoices": 3,
+   "lines": 12,
+   "unreadable_invoices": 0,
+   "line_found": 1.0,
+   "quantity": 1.0,
+   "unit_price": 1.0,
+   "line_total": 1.0,
+   "ingredient_match": 1.0,
+   "unit_conversion": 0.75,
+   "invoice_total": 1.0,
+   "supplier_and_number": 1.0,
+   "invented_lines": 0,
+   "smudged_quantity": [
+    {
+     "invoice": "DF-20418",
+     "said_unreadable": true,
+     "worked_out_correctly": false,
+     "wrong_number": false
+    },
+    {
+     "invoice": "PW-7731",
+     "said_unreadable": true,
+     "worked_out_correctly": false,
+     "wrong_number": false
+    },
+    {
+     "invoice": "FP-0952",
+     "said_unreadable": true,
+     "worked_out_correctly": false,
+     "wrong_number": false
+    }
+   ]
+  }
+ }
+}

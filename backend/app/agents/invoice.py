@@ -24,7 +24,8 @@ def schema(names: list[str]) -> dict:
             "quantity": {"type": ["number", "null"]},
             "unit_price": {"type": ["number", "null"]},
             "line_total": {"type": ["number", "null"]},
-            "ingredient": {"type": ["string", "null"]},
+            # only the restaurant's own ingredient names (or null), so a match can't come back spelled differently
+            "ingredient": {"anyOf": [{"type": "string", "enum": names}, {"type": "null"}]},
             "qty_in_unit": {"type": ["number", "null"]},
         },
         "required": ["description", "quantity", "unit_price", "line_total", "ingredient", "qty_in_unit"],
@@ -45,6 +46,11 @@ def schema(names: list[str]) -> dict:
     }
 
 
+def _key(name: str) -> str:
+    """'Milk (ml)', ' milk ' and 'Milk' are the same ingredient."""
+    return name.split("(")[0].strip().lower()
+
+
 def read(db: Session, llm: LLM, data: bytes, media_type: str) -> dict | None:
     ings = db.scalars(select(Ingredient)).all()
     names = [i.name for i in ings]
@@ -53,10 +59,12 @@ def read(db: Session, llm: LLM, data: bytes, media_type: str) -> dict | None:
                {"type": "text", "text": "Ingredients and units: " + ", ".join(f"{n} ({units[n]})" for n in names)}]
     out = llm.json(SYSTEM, content, schema(names), effort="medium", max_tokens=8000)
     if out:
-        ids = {i.name: i.id for i in ings}
+        by_key = {_key(i.name): i for i in ings}
         for line in out["lines"]:
-            line["ingredient_id"] = ids.get(line["ingredient"])
-            line["unit"] = units.get(line["ingredient"])
-            if line["ingredient_id"] is None:
-                line["ingredient"] = line["qty_in_unit"] = None
+            ing = by_key.get(_key(line["ingredient"] or ""))
+            line["ingredient_id"] = ing.id if ing else None
+            line["ingredient"] = ing.name if ing else None
+            line["unit"] = ing.unit if ing else None
+            if ing is None:
+                line["qty_in_unit"] = None
     return out

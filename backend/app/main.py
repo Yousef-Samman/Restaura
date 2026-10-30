@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import auth, finance, forecast, mailer, routines, staff as staffing, stock
+from . import auth, finance, forecast, mailer, routines, sales_report, staff as staffing, stock
 from .agents import cashier, invoice, overview, stock_agent
 from .agents.llm import LLM
 from .config import Settings, get_settings
@@ -254,14 +254,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def import_sales(file: UploadFile, business_date: dt.date | None = None, db: Session = Depends(get_db), _=Depends(manager_only)):
         """Daily sales report from the POS as CSV with columns item,qty. Sales already happened,
         so stock may go below zero; the stock agent then flags a missing delivery."""
-        import csv
-        import io
-        rows = list(csv.DictReader(io.StringIO((await file.read()).decode("utf-8-sig"))))
         by_name = {i.name.lower(): i for i in db.scalars(select(MenuItem))}
-        unknown = [r.get("item", "") for r in rows if r.get("item", "").strip().lower() not in by_name]
-        if unknown:
-            raise HTTPException(400, f"Items not on the menu: {', '.join(unknown)}")
-        items = [(by_name[r["item"].strip().lower()], int(r["qty"])) for r in rows]
+        try:
+            items = sales_report.parse(await file.read(), by_name)
+        except sales_report.ReportError as exc:
+            raise HTTPException(400, str(exc))
         order = Order(business_date=business_date or dt.date.today(), source="import",
                       total=sum(i.price * q for i, q in items))
         order.lines = [OrderLine(menu_item_id=i.id, qty=q, price=i.price) for i, q in items]

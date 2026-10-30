@@ -69,6 +69,11 @@ def avg_daily_use(db: Session, days: int = 7) -> dict[int, float]:
     return {ing_id: total / days for ing_id, total in rows}
 
 
+def items_without_recipe(db: Session) -> list[str]:
+    """Menu items with no recipe. Their sales don't reduce any stock, so the estimate drifts without a warning."""
+    return list(db.scalars(select(MenuItem.name).where(~MenuItem.recipe.any()).order_by(MenuItem.name)))
+
+
 def open_order_ingredients(db: Session) -> set[int]:
     return set(db.scalars(
         select(PurchaseOrderLine.ingredient_id)
