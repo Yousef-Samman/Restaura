@@ -1,8 +1,9 @@
 {
  "run": {
-  "at": "2026-10-30T14:43:40+00:00",
+  "at": "2026-10-30T15:32:55+00:00",
   "ai_model": "claude-haiku-5-5",
-  "seconds": 200
+  "ai_at": "2026-10-30T14:43:40+00:00",
+  "seconds": 172
  },
  "cashier": {
   "app sample data": {
@@ -373,5 +374,386 @@
     }
    ]
   }
+ },
+ "fixes": [
+  {
+   "what": "Forecast follows a change in sales within a week",
+   "before": "26.4%",
+   "after": "20.8%",
+   "measure": "Error on real U Walk sales, last 6 weeks"
+  },
+  {
+   "what": "Invoices always matched to your ingredients",
+   "before": "4 of 21",
+   "after": "0",
+   "measure": "Invoice reads that lost their ingredient matches"
+  },
+  {
+   "what": "Claude's stock notes quote only real numbers",
+   "before": "2",
+   "after": "0",
+   "measure": "Numbers in the notes that are not on the order"
+  },
+  {
+   "what": "An odd answer from Claude no longer breaks an agent",
+   "before": "error",
+   "after": "rules",
+   "measure": "Answer of the wrong shape: the rules take over"
+  },
+  {
+   "what": "A slow Claude can't freeze the cashier",
+   "before": "10 min",
+   "after": "30 s",
+   "measure": "Longest wait before the rules answer instead"
+  },
+  {
+   "what": "Bad sales files are refused before stock changes",
+   "before": "error",
+   "after": "clear reason",
+   "measure": "A quantity like \"two\" or \"-3\" in a POS report"
+  },
+  {
+   "what": "Dishes with no recipe are flagged",
+   "before": "silent",
+   "after": "warned",
+   "measure": "Their sales would never reduce stock"
+  }
+ ],
+ "tests": {
+  "at": "2026-10-30T15:35:47+00:00",
+  "passed": 66,
+  "total": 66,
+  "cases": [
+   {
+    "file": "test_auth",
+    "name": "test_api_needs_sign_in",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_auth",
+    "name": "test_wrong_password",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_auth",
+    "name": "test_manager_signs_in_anywhere_and_lands_on_manager",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_auth",
+    "name": "test_cashier_refused_on_unpaired_device",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_auth",
+    "name": "test_cashier_on_paired_ipad",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_auth",
+    "name": "test_pairing_code_works_once",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_auth",
+    "name": "test_revoking_device_signs_cashier_out",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_eval_regression",
+    "name": "test_cashier_learns_what_sells_together",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_eval_regression",
+    "name": "test_forecast_beats_baselines_and_previous_method",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_eval_regression",
+    "name": "test_stock_agent_known_orders_and_random_stores",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_evaluation_page",
+    "name": "test_page_shows_the_committed_results",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_evaluation_page",
+    "name": "test_verdict_does_not_claim_a_win_it_did_not_get",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_evaluation_page",
+    "name": "test_page_without_results_says_so",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_evaluation_page",
+    "name": "test_page_is_for_the_manager_only",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_expenses",
+    "name": "test_expenses_summary_and_profit",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_expenses",
+    "name": "test_add_and_remove_expense",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_expenses",
+    "name": "test_delivery_is_recorded_as_purchase",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_expenses",
+    "name": "test_cashier_cannot_see_expenses",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_status_reports_ai_off",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_sale_consumes_ingredients_by_recipe",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_cashier_suggests_available_items_not_in_cart",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_accepted_suggestion_is_tracked",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_out_of_stock_item_is_hidden_and_refused",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_full_stock_to_order_loop",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_manager_can_edit_quantities_before_approving",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_ingredient_running_out_before_delivery_is_urgent",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_pos_import_can_go_negative_and_is_flagged",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_pos_import_rejects_unknown_items",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_invoice_reading_needs_key",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_sales_summary",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_whatsapp_supplier_gets_click_to_chat_link",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_flow",
+    "name": "test_low_when_stock_runs_out_before_delivery",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_forecast",
+    "name": "test_forecast_shape_and_method",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_forecast",
+    "name": "test_steady_sales_give_the_weekday_back",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_forecast",
+    "name": "test_forecast_follows_a_change_in_level",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_forecast",
+    "name": "test_no_history_gives_no_forecast",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_invoice",
+    "name": "test_invoice_lines_carry_the_ingredient_unit_and_unmatched_lines_have_no_quantity",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_overview",
+    "name": "test_overview_priorities_link_to_sections",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_overview",
+    "name": "test_overview_agent_rules_mode",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_overview",
+    "name": "test_low_ingredient_with_order_on_the_way_no_longer_needs_the_manager",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_bad_sales_report_is_refused_and_stock_unchanged[item,qty\\nHazelnut crepe,two\\n-not a number]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_bad_sales_report_is_refused_and_stock_unchanged[item,qty\\nHazelnut crepe,-3\\n-whole number]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_bad_sales_report_is_refused_and_stock_unchanged[item,qty\\nHazelnut crepe,1.5\\n-whole number]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_bad_sales_report_is_refused_and_stock_unchanged[item,qty\\nHazelnut crepe,999999\\n-whole number]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_bad_sales_report_is_refused_and_stock_unchanged[name,amount\\nHazelnut crepe,2\\n-columns named item and qty]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_bad_sales_report_is_refused_and_stock_unchanged[-columns named item and qty]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_bad_sales_report_is_refused_and_stock_unchanged[item,qty\\n-no sales lines]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_bad_sales_report_is_refused_and_stock_unchanged[item,qty\\nHazelnut crepe,2\\nUnicorn cake,1\\n-Unicorn cake]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_bad_sales_report_is_refused_and_stock_unchanged[item,qty\\n\\xff\\xfeHazelnut crepe,2\\n-UTF-8]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_messy_but_valid_report_is_read",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_selling_more_than_stock_goes_negative_and_is_flagged",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_menu_item_without_recipe_is_warned_about",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_new_store_with_no_data_works",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_nothing_in_stock_means_no_suggestions",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_agents_fall_back_to_rules[unreachable]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_agents_fall_back_to_rules[overloaded]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_agents_fall_back_to_rules[not JSON]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_agents_fall_back_to_rules[wrong JSON shape]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_agents_fall_back_to_rules[items not on the menu]",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_invoice_photo_when_claude_is_down_points_to_manual_entry",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_robustness",
+    "name": "test_claude_calls_have_a_short_timeout",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_routines",
+    "name": "test_cashier_ticks_tasks_and_manager_sees_them",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_routines",
+    "name": "test_history_and_task_editing_are_manager_only",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_staff",
+    "name": "test_clock_in_and_out_with_pin",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_staff",
+    "name": "test_manager_views_and_permissions",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_staff",
+    "name": "test_add_staff_rejects_duplicate_pin",
+    "outcome": "passed"
+   }
+  ]
  }
 }
