@@ -134,3 +134,23 @@ def test_whatsapp_supplier_gets_click_to_chat_link(client):
     assert r["status"] == "sent" and r["email"] is None
     assert r["whatsapp_link"].startswith("https://wa.me/966500000000?text=Hello%20Fresh%20Produce")
     assert any(m["status"] == "link" for m in client.get("/api/outbox").json())
+
+
+def test_low_when_stock_runs_out_before_delivery(client):
+    """An ingredient above its minimum, but with under 2 days left on a 1-day supplier, is low and gets ordered.
+    Cashier availability is unchanged: it only depends on real shortages."""
+    rows = {r["name"]: r for r in client.get("/api/stock").json()}
+    milk = rows["Milk"]
+    assert milk["avg_daily_use"] > 0 and milk["lead_days"] == 1
+    target = milk["avg_daily_use"] * 1.5  # 1.5 days left
+    assert target > milk["min_level"], "the test needs milk above its minimum"
+    client.post("/api/stock/count", json=[{"ingredient_id": milk["id"], "counted": target}])
+    milk = {r["name"]: r for r in client.get("/api/stock").json()}["Milk"]
+    assert milk["status"] == "low" and milk["reason"] == "runs out before a delivery could arrive"
+    assert client.get("/api/today").json()["low_stock"] >= 1
+    client.post("/api/agents/stock/run")
+    lines = [l["ingredient"] for po in client.get("/api/purchase-orders").json() for l in po["lines"]]
+    assert "Milk" in lines
+    assert any("low" in p["text"] for p in client.get("/api/overview").json()["priorities"])
+    menu = {i["name"]: i for i in client.get("/api/menu").json()}
+    assert menu["Latte"]["available"]

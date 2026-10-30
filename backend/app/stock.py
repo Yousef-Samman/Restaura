@@ -14,6 +14,23 @@ def item_available(item: MenuItem, extra_use: dict[int, float] | None = None) ->
     return all(r.ingredient.on_hand - extra_use.get(r.ingredient_id, 0) >= r.qty for r in item.recipe)
 
 
+def runs_out_before_delivery(on_hand: float, daily: float, lead_days: int | None) -> bool:
+    """True when today's stock won't last until an order placed tomorrow arrives:
+    days left <= lead time + 1. A supplier without a lead time counts as 1 day, so the cut-off is 2 days."""
+    return daily > 0 and on_hand / daily <= (lead_days or 1) + 1
+
+
+def stock_status(on_hand: float, min_level: float, daily: float, lead_days: int | None) -> tuple[str, str | None]:
+    """(status, reason). status is negative | low | ok. Only for planning: cashier availability uses item_available."""
+    if on_hand < 0:
+        return "negative", "below zero"
+    if on_hand <= min_level:
+        return "low", "at or below minimum"
+    if runs_out_before_delivery(on_hand, daily, lead_days):
+        return "low", "runs out before a delivery could arrive"
+    return "ok", None
+
+
 def consume(db: Session, lines: list[tuple[MenuItem, int]], ref: str) -> None:
     use: dict[int, float] = defaultdict(float)
     for item, qty in lines:
@@ -65,12 +82,13 @@ def stock_report(db: Session) -> list[dict]:
     out = []
     for ing in db.scalars(select(Ingredient).order_by(Ingredient.name)):
         daily = use.get(ing.id, 0.0)
+        status, reason = stock_status(ing.on_hand, ing.min_level, daily, ing.supplier.lead_days)
         out.append({
             "id": ing.id, "name": ing.name, "unit": ing.unit, "on_hand": round(ing.on_hand, 1),
             "min_level": ing.min_level, "par_level": ing.par_level, "supplier": ing.supplier.name,
             "avg_daily_use": round(daily, 1),
             "days_left": round(ing.on_hand / daily, 1) if daily > 0 else None,
-            "status": "negative" if ing.on_hand < 0 else "low" if ing.on_hand <= ing.min_level else "ok",
+            "lead_days": ing.supplier.lead_days, "status": status, "reason": reason,
         })
     return out
 
@@ -85,8 +103,7 @@ def plan_reorders(db: Session) -> list[dict]:
     for ing in db.scalars(select(Ingredient)):
         daily = use.get(ing.id, 0.0)
         lead = ing.supplier.lead_days
-        runs_out_soon = daily > 0 and ing.on_hand / daily <= lead + 1
-        if ing.id in already or (ing.on_hand > ing.min_level and not runs_out_soon):
+        if ing.id in already or stock_status(ing.on_hand, ing.min_level, daily, lead)[0] == "ok":
             continue
         qty = max(ing.par_level - max(ing.on_hand, 0), 0) + daily * lead
         step = 1 if ing.unit == "pcs" else 100

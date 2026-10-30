@@ -290,7 +290,7 @@ const VIEWS = {
       const minPct = (r.min_level / r.par_level) * 100;
       return `<div class="stock-row"><span class="n">${esc(r.name)}</span><span class="chip ${r.status}">${r.status === "ok" ? "OK" : r.status}</span>
         <div class="meter ${r.status}"><i style="width:${pct}%"></i><b style="left:${minPct}%"></b></div>
-        <span class="d num">${fmt(r.on_hand)} ${r.unit} on hand · min ${fmt(r.min_level)} · ${r.days_left == null ? "no recent use" : `${r.days_left} days left`} · ${esc(r.supplier)}</span></div>`;
+        <span class="d num">${fmt(r.on_hand)} ${r.unit} on hand · min ${fmt(r.min_level)} · ${r.days_left == null ? "no recent use" : `${r.days_left} days left`} · ${esc(r.supplier)}${r.status === "low" && r.reason ? `<br><b>Low: ${esc(r.reason)}</b> (${r.lead_days}-day delivery)` : ""}</span></div>`;
     };
     return `<div class="section">${agentCard(runs.find((r) => r.agent === "stock"))}</div>
       <div class="section"><h2>Ingredients</h2><div class="panel">${rows.map(row).join("")}</div></div>

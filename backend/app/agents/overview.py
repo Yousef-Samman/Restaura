@@ -41,7 +41,7 @@ def facts(db: Session) -> dict:
         "staff_missing": [r["staff"] for r in staff.today_view(db)["shifts"] if r["status"] == "missing"],
         "staff_late_today": [{"name": r["staff"], "minutes": r["late_min"]} for r in staff.today_view(db)["shifts"] if r["status"] == "late"],
         "negative_stock": [r["name"] for r in report if r["status"] == "negative"],
-        "below_minimum": [r["name"] for r in report if r["status"] == "low"],
+        "low_stock": [{"name": r["name"], "why": r["reason"]} for r in report if r["status"] == "low"],
         "runs_out_this_week_no_order": [{"name": i["name"], "date": i["runs_out"]} for i in fc["ingredients"]
                                         if i["runs_out"] and i["id"] not in stock.open_order_ingredients(db)],
     }
@@ -59,11 +59,12 @@ def priorities(f: dict) -> list[dict]:
         out.append({"level": "bad", "text": f"Not clocked in for their shift: {', '.join(f['staff_missing'])}.", "go": "staff"})
     for r in f["routines_overdue"]:
         out.append({"level": "warn", "text": f"{r['routine']} checklist is late: {r['missing']} {'task' if r['missing'] == 1 else 'tasks'} not done (due {r['due']}).", "go": "routines"})
-    if f["below_minimum"]:
-        out.append({"level": "warn", "text": f"{len(f['below_minimum'])} ingredients are at or below their minimum.", "go": "stock"})
-    soon = [i for i in f["runs_out_this_week_no_order"] if i["name"] not in f["below_minimum"]]
+    low = [x["name"] for x in f["low_stock"]]
+    if low:
+        out.append({"level": "warn", "text": f"{len(low)} {'ingredient is' if len(low) == 1 else 'ingredients are'} low: at minimum or running out before a delivery could arrive.", "go": "stock"})
+    soon = [i for i in f["runs_out_this_week_no_order"] if i["name"] not in low]
     if soon:
-        out.append({"level": "info", "text": f"{len(soon)} {'more ' if f['below_minimum'] else ''}{'ingredient' if len(soon) == 1 else 'ingredients'} will run out this week at the expected sales, with no order placed yet.", "go": "forecast"})
+        out.append({"level": "info", "text": f"{len(soon)} {'more ' if low else ''}{'ingredient' if len(soon) == 1 else 'ingredients'} will run out this week at the expected sales, with no order placed yet.", "go": "forecast"})
     if f["food_cost_share_7d"] and f["food_cost_share_7d"] > finance.FOOD_COST_TARGET:
         out.append({"level": "warn", "text": f"Ingredient cost is {f['food_cost_share_7d']:.0%} of sales this week, above the {finance.FOOD_COST_TARGET:.0%} target.", "go": "expenses"})
     if not out:

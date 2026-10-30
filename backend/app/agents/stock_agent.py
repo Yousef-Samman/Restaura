@@ -59,7 +59,7 @@ def run(db: Session, llm: LLM) -> dict:
               if p["daily"] and p["ingredient"].on_hand / p["daily"] < p["lead"]]
     plural = lambda n, w: f"{n} {w}" + ("" if n == 1 else "s")
     headline = (f"{plural(len(orders), 'supplier order')} drafted for {plural(len(plan), 'ingredient')}. Waiting for your approval."
-                if orders else "Stock is above minimum. No orders needed today.")
+                if orders else "No ingredient is low. No orders needed today.")
     notes = {po.supplier.name: " ".join(f"{l.ingredient.name}: {l.reason}" for l in po.lines) for po in orders}
     source = "rules"
     if llm.enabled:
