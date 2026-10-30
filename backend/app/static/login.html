@@ -16,37 +16,52 @@
     <div class="brand"><span class="mark"><img src="/static/logo.svg" alt=""></span>
       <div><div class="wordmark">RESTAURA<small>MMXXVI</small></div><div class="tag" id="tag">Eight agents. One restaurant.</div></div></div>
 
+    <!-- first page: who is using this device -->
+    <div id="choose" class="form" hidden>
+      <div class="q">How are you signing in?</div>
+      <div class="role-grid">
+        <button type="button" class="role" id="as-manager"><span class="ic" id="ic-manager"></span><span><b>Manager</b><small>Run the store from your phone or laptop</small></span><span class="chev" data-chev></span></button>
+        <button type="button" class="role" id="as-cashier"><span class="ic" id="ic-cashier"></span><span><b>Cashier</b><small>Take orders on the store's iPad</small></span><span class="chev" data-chev></span></button>
+      </div>
+    </div>
+
+    <form id="login" class="form" hidden>
+      <button type="button" class="backrow" data-back></button>
+      <div class="q">Manager sign-in</div>
+      <div class="err" id="err" hidden></div>
+      <label class="field">Username<input id="u" autocomplete="username" autocapitalize="none" required></label>
+      <label class="field">Password<input id="p" type="password" autocomplete="current-password" required></label>
+      <button class="solid" type="submit">Sign in</button>
+    </form>
+
+    <!-- cashier on an iPad that is not paired yet: the 6-digit code from the manager app, entered once -->
+    <div id="pair" class="form" hidden>
+      <button type="button" class="backrow" data-back></button>
+      <div class="stepdots"><i class="on"></i><i></i></div>
+      <div class="q">Enter this iPad's code</div>
+      <div class="err" id="perr" hidden></div>
+      <div class="code-boxes" id="boxes"></div>
+      <div class="keys" id="ckeys"></div>
+      <div class="hint"><span id="ic-hint"></span><span>The manager gets the 6-digit code in the manager app under More › Cashier iPads › Pair a cashier iPad. You enter it once per iPad.</span></div>
+    </div>
+
     <!-- on the paired cashier iPad: each staff member taps their name and enters their PIN -->
     <div id="staff" class="form" hidden>
+      <button type="button" class="backrow" data-back></button>
+      <div class="stepdots" id="staff-dots"><i class="on"></i><i class="on"></i></div>
+      <div class="q">Who is signing in?</div>
       <div class="err" id="serr" hidden></div>
-      <div class="field">Who is signing in?</div>
       <div class="who-grid" id="who"></div>
       <div id="pinbox" hidden>
         <div class="tag" id="pin-for"></div>
         <div class="pin-dots" id="dots"></div>
         <div class="keys" id="keys"></div>
       </div>
-      <button type="button" id="to-manager" class="muted linkish">Manager sign-in</button>
+      <div class="tag devname" id="devstate"></div>
     </div>
-
-    <form id="login" class="form" hidden>
-      <div class="err" id="err" hidden></div>
-      <label class="field">Username<input id="u" autocomplete="username" autocapitalize="none" required></label>
-      <label class="field">Password<input id="p" type="password" autocomplete="current-password" required></label>
-      <button class="solid" type="submit">Sign in</button>
-      <button type="button" id="to-staff" class="muted linkish" hidden>Staff sign-in with PIN</button>
-    </form>
-
-    <form id="pair" class="form" hidden>
-      <div class="err" id="perr" hidden></div>
-      <div class="tag">Enter the 6-digit code from the manager app to make this iPad the cashier station.</div>
-      <label class="field">Pairing code<input id="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required></label>
-      <button class="solid" type="submit">Pair this device</button>
-      <button type="button" id="back" class="muted linkish">Back to sign in</button>
-    </form>
-    <div class="devline"><span id="devstate"></span><button type="button" id="topair">Pair as cashier iPad</button></div>
   </div>
 </main>
+<script src="/static/icons.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -56,16 +71,15 @@ async function post(path, body) {
   if (!r.ok) throw new Error(j.detail || "Something went wrong");
   return j;
 }
-let paired = false, who = null, pin = "";
-const show = (view) => { for (const v of ["staff", "login", "pair"]) $(v).hidden = v !== view; $("to-staff").hidden = !paired; };
+const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
+const keypad = (el, onKey) => {
+  el.innerHTML = KEYS.map((k) => `<button type="button" ${k ? "" : "disabled"} data-k="${k}" aria-label="${k === "⌫" ? "Delete" : k}">${k}</button>`).join("");
+  el.querySelectorAll("button").forEach((b) => (b.onclick = () => onKey(b.dataset.k)));
+};
+let paired = false, who = null, pin = "", code = "", busy = false;
+const show = (view) => { for (const v of ["choose", "login", "pair", "staff"]) $(v).hidden = v !== view; };
 
-async function refresh() {
-  const me = await fetch("/api/auth/me").then((r) => r.json());
-  if (me.user) location.href = me.user.role === "cashier" ? "/cashier" : "/manager";
-  paired = !!me.device;
-  $("devstate").textContent = paired ? `This device: ${me.device.name}` : "This device is not a cashier station";
-  $("topair").hidden = paired;
-  if (!paired) return show("login");
+async function loadStaff() {
   const staff = await fetch("/api/auth/staff").then((r) => r.json()).catch(() => []);
   $("who").innerHTML = staff.map((m) => `<button type="button" data-id="${m.id}" data-name="${esc(m.name)}"><b>${esc(m.name)}</b><small>${esc(m.role)}</small></button>`).join("");
   $("who").querySelectorAll("button").forEach((b) => (b.onclick = () => {
@@ -74,32 +88,55 @@ async function refresh() {
     $("pin-for").textContent = `${b.dataset.name}, enter your 4-digit PIN`;
     $("pinbox").hidden = false; $("serr").hidden = true;
   }));
-  show("staff");
+}
+async function refresh() {
+  const me = await fetch("/api/auth/me").then((r) => r.json());
+  if (me.user) location.href = me.user.role === "cashier" ? "/cashier" : "/manager";
+  paired = !!me.device;
+  $("devstate").textContent = paired ? `This iPad: ${me.device.name}` : "";
+  if (paired) await loadStaff();
 }
 function dots() { $("dots").innerHTML = [0, 1, 2, 3].map((i) => `<i class="${i < pin.length ? "on" : ""}"></i>`).join(""); }
-async function key(k) {
+function boxes() { $("boxes").innerHTML = [0, 1, 2, 3, 4, 5].map((i) => `<i class="${i === code.length ? "cur" : ""}">${code[i] || ""}</i>`).join(""); }
+
+async function pinKey(k) {
   if (k === "⌫") pin = pin.slice(0, -1); else if (k && pin.length < 4) pin += k;
   dots();
   if (pin.length < 4) return;
   try { const r = await post("/api/auth/staff-login", { staff_id: who, pin }); location.href = r.home; }
   catch (x) { $("serr").textContent = x.message; $("serr").hidden = false; pin = ""; dots(); }
 }
-$("keys").innerHTML = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"].map((k) => `<button type="button" ${k ? "" : "disabled"} data-k="${k}">${k}</button>`).join("");
-$("keys").querySelectorAll("button").forEach((b) => (b.onclick = () => key(b.dataset.k)));
-$("topair").onclick = () => show("pair");
-$("back").onclick = () => show(paired ? "staff" : "login");
-$("to-manager").onclick = () => show("login");
-$("to-staff").onclick = () => show("staff");
+async function codeKey(k) {
+  if (busy) return;
+  if (k === "⌫") code = code.slice(0, -1); else if (k && code.length < 6) code += k;
+  $("perr").hidden = true; boxes();
+  if (code.length < 6) return;
+  busy = true;
+  try { await post("/api/devices/pair", { code }); await refresh(); $("staff-dots").hidden = false; show("staff"); }
+  catch (x) { $("perr").textContent = x.message; $("perr").hidden = false; code = ""; boxes(); }
+  busy = false;
+}
+keypad($("keys"), pinKey);
+keypad($("ckeys"), codeKey);
+$("ic-manager").innerHTML = ICONS.manager;
+$("ic-cashier").innerHTML = ICONS.device;
+$("ic-hint").innerHTML = ICONS.device;
+document.querySelectorAll("[data-chev]").forEach((e) => (e.innerHTML = ICONS.chevron));
+document.querySelectorAll("[data-back]").forEach((b) => {
+  b.innerHTML = `${ICONS.back}Back`;
+  b.onclick = () => { $("err").hidden = $("perr").hidden = $("serr").hidden = true; show("choose"); };
+});
+$("as-manager").onclick = () => { show("login"); $("u").focus(); };
+$("as-cashier").onclick = () => {
+  if (paired) { $("staff-dots").hidden = true; show("staff"); }
+  else { code = ""; boxes(); show("pair"); }
+};
 $("login").onsubmit = async (e) => {
   e.preventDefault(); $("err").hidden = true;
   try { const r = await post("/api/auth/login", { username: $("u").value, password: $("p").value }); location.href = r.home; }
   catch (x) { $("err").textContent = x.message; $("err").hidden = false; }
 };
-$("pair").onsubmit = async (e) => {
-  e.preventDefault(); $("perr").hidden = true;
-  try { await post("/api/devices/pair", { code: $("code").value }); refresh(); }
-  catch (x) { $("perr").textContent = x.message; $("perr").hidden = false; }
-};
+show("choose");
 refresh();
 </script>
 </body>

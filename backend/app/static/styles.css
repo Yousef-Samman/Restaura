@@ -833,3 +833,22 @@ body.has-hero .mgr-top { padding-bottom: 10px; }
 .sg-card .sg-add { grid-column: 2; grid-row: 1 / span 2; padding: 0 16px; height: 42px; }
 .tap.ok .tap-x, .tap.ok #tap-sim, .tap.reading #tap-sim { visibility: hidden; }
 .sg-top span { white-space: nowrap; }
+
+/* sign-in: role choice, iPad code, back row */
+.auth .q { font-size: 18px; font-weight: 800; }
+.role-grid { display: grid; gap: 10px; }
+.role { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 18px; background: var(--cloud); border: 1.5px solid transparent; text-align: left; width: 100%; }
+.role:hover, .role:focus-visible { border-color: var(--brass); }
+.role .ic { width: 48px; height: 48px; border-radius: 14px; background: var(--paper); border: 1px solid var(--line); display: grid; place-items: center; flex: none; color: var(--brand); }
+.role .ic svg { width: 24px; height: 24px; }
+.role b { font-size: 17px; display: block; } .role small { font-size: 13px; color: var(--muted); font-weight: 600; }
+.role .chev { margin-left: auto; color: var(--muted); display: grid; } .role .chev svg { width: 18px; height: 18px; }
+.code-boxes { display: flex; gap: 8px; justify-content: center; margin: 4px 0; }
+.code-boxes i { width: 44px; height: 54px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--paper); display: grid; place-items: center; font-style: normal; font-size: 24px; font-weight: 800; }
+.code-boxes i.cur { border-color: var(--brass); box-shadow: 0 0 0 3px var(--brass-tint); }
+.auth .hint { font-size: 13px; color: var(--muted); background: var(--cloud); border-radius: 12px; padding: 10px 12px; display: flex; gap: 8px; align-items: flex-start; }
+.auth .hint svg { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--brass-text); }
+.backrow { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--muted); font-size: 14px; align-self: flex-start; }
+.backrow svg { width: 16px; height: 16px; }
+.stepdots { display: flex; gap: 6px; justify-content: center; } .stepdots i { width: 24px; height: 4px; border-radius: 2px; background: var(--line); } .stepdots i.on { background: var(--brass); }
+.auth .devname { text-align: center; font-weight: 600; }
