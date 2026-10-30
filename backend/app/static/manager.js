@@ -15,6 +15,7 @@ const MORE = [
   { id: "forecast", label: "Forecast", icon: "sales", sub: "Next 7 days, tomorrow's prep, ingredients needed" },
   { id: "expenses", label: "Expenses", icon: "wallet", sub: "Costs and estimated profit" },
   { id: "routines", label: "Routines", icon: "check", sub: "Opening, mid-shift and closing checklists" },
+  { id: "staff", label: "Staff", icon: "people", sub: "Shifts, attendance and hours" },
 ];
 const SECTION = (id) => [...TABS, ...MORE].find((t) => t.id === id);
 let expDays = 30;
@@ -73,6 +74,43 @@ function agentCard(run) {
 const VIEWS = {
   async more() {
     return `<div class="section"><div class="panel">${MORE.map((m) => `<button class="more-row" data-go="${m.id}"><span class="ic">${ICONS[m.icon]}</span><span><b>${m.label}</b><br><span class="muted">${m.sub}</span></span>${ICONS.chevron}</button>`).join("")}</div></div>`;
+  },
+
+  async staff() {
+    const [t, w] = await Promise.all([api("/api/staff/today"), api("/api/staff/week")]);
+    window._st = w;
+    const d = (iso, o) => new Date(iso + "T00:00").toLocaleDateString("en-GB", o);
+    const label = { on_time: ["In", "received"], late: ["Late", "negative"], missing: ["Not in", "negative"], upcoming: ["Later", "draft"], done: ["Finished", "received"] };
+    const n = (st) => t.shifts.filter((x) => x.status === st).length;
+    const short = (s) => s ? s.replace(/:00/g, "") : "";
+    const todayIdx = w.days.indexOf(t.date);
+    return `<div class="hero" style="margin-top:12px">
+        <div><div class="label">On shift now</div><div class="value num">${t.on_shift.length}</div></div>
+        <div><div class="label">Shifts today</div><div class="value num">${t.shifts.length}</div></div>
+        <div><div class="label">Late today</div><div class="value num" style="color:${n("late") ? "var(--warn)" : "inherit"}">${n("late")}</div></div>
+        <div><div class="label">Not in</div><div class="value num" style="color:${n("missing") ? "var(--bad)" : "inherit"}">${n("missing")}</div></div>
+      </div>
+      <div class="section"><h2>Today · ${d(t.date, { weekday: "long", day: "numeric", month: "short" })}</h2><div class="panel">
+        ${t.shifts.map((x) => `<div class="list-item"><span>${esc(x.staff)} · <span class="muted">${esc(x.role)}</span><br><span class="muted">${x.start}–${x.end}${x.clock_in ? ` · in ${x.clock_in}${x.late_min > 10 ? ` (${x.late_min} min late)` : ""}` : ""}${x.clock_out ? ` · out ${x.clock_out}` : ""}</span></span><span class="chip ${label[x.status][1]}">${label[x.status][0]}</span></div>`).join("") || '<div class="muted">No shifts today.</div>'}
+        <div class="muted" style="font-size:13px;margin-top:10px">Staff clock in and out on the cashier iPad with their 4-digit PIN.</div>
+      </div></div>
+      <div class="section panel chart-card"><h3>Hours worked</h3><div class="sub">Last 7 days, from clock-in to clock-out</div><div id="c-hours"></div></div>
+      <div class="section"><h2>This week's shifts</h2><div class="panel" style="overflow-x:auto">
+        <table class="sched"><tr><th></th>${w.days.map((x, i) => `<th class="${i === todayIdx ? "now" : ""}">${d(x, { weekday: "short" })}<br><span class="muted">${new Date(x + "T00:00").getDate()}</span></th>`).join("")}</tr>
+        ${w.staff.map((m) => `<tr><th>${esc(m.name)}</th>${m.shifts.map((s, i) => `<td class="${i === todayIdx ? "now" : ""}">${s ? `<span class="pill ${s.startsWith("10") ? "am" : "pm"}">${short(s)}</span>` : '<span class="muted">Off</span>'}</td>`).join("")}</tr>`).join("")}</table>
+      </div></div>
+      <div class="section"><h2>Set a shift</h2><div class="panel form">
+        <label class="field">Who<select id="s-who">${w.staff.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join("")}</select></label>
+        <label class="field">Day<select id="s-day">${w.days.map((x) => `<option value="${x}">${d(x, { weekday: "long", day: "numeric", month: "short" })}</option>`).join("")}</select></label>
+        <label class="field">Shift<select id="s-time"><option value="10:00-17:00">Morning 10:00–17:00</option><option value="17:00-00:00">Evening 17:00–00:00</option></select></label>
+        <button class="solid" id="s-save">Save shift</button>
+      </div></div>
+      <div class="section"><h2>Add a staff member</h2><div class="panel form">
+        <label class="field">Name<input id="n-name" type="text" maxlength="120"></label>
+        <label class="field">Role<input id="n-role" type="text" maxlength="60" placeholder="Cashier, Crepe maker…"></label>
+        <label class="field">4-digit PIN for clocking in<input id="n-pin" type="text" inputmode="numeric" maxlength="4" pattern="\\d{4}"></label>
+        <button class="solid" id="n-save">Add staff member</button>
+      </div></div>`;
   },
 
   async routines() {
@@ -297,6 +335,20 @@ function bindAgent() {
 const BIND = {
   more() {
     document.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
+  },
+  staff() {
+    const w = window._st;
+    Charts.bars($("c-hours"), w.staff.map((m) => ({ value: m.hours_7d, label: m.name, tip: `${esc(m.name)}<br><b>${m.hours_7d} h</b> · late ${m.late_7d}×` })), { unit: " h" });
+    $("s-save").onclick = async () => {
+      const [start, end] = $("s-time").value.split("-");
+      await api("/api/shifts", { method: "POST", body: JSON.stringify({ staff_id: +$("s-who").value, date: $("s-day").value, start, end }) });
+      toast("Shift saved"); render();
+    };
+    $("n-save").onclick = async () => {
+      const name = $("n-name").value.trim(), role = $("n-role").value.trim(), pin = $("n-pin").value.trim();
+      if (!name || !role || !/^\d{4}$/.test(pin)) return toast("Enter a name, a role and a 4-digit PIN", true);
+      try { await api("/api/staff", { method: "POST", body: JSON.stringify({ name, role, pin }) }); toast(`${name} added`); render(); } catch (e) { toast(e.message, true); }
+    };
   },
   routines() {
     const h = window._rt, d = (iso) => new Date(iso + "T00:00");

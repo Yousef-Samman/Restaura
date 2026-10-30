@@ -5,7 +5,7 @@ import random
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Expense, Ingredient, RoutineCheck, RoutineTask, MenuItem, Order, OrderLine, RecipeLine, StockMove, Supplier
+from .models import Attendance, Expense, Ingredient, RoutineCheck, RoutineTask, Shift, StaffMember, MenuItem, Order, OrderLine, RecipeLine, StockMove, Supplier
 
 SUPPLIERS = [
     ("Fresh Produce Co.", "orders@fresh-produce.example", 1),
@@ -80,6 +80,7 @@ def seed(db: Session, history_days: int = 30) -> None:
     _seed_history(db, items, history_days)
     _seed_expenses(db)
     _seed_routines(db)
+    _seed_staff(db)
     db.commit()
 
 
@@ -140,3 +141,32 @@ def _seed_routines(db: Session) -> None:
                 hour = {"opening": 10, "midday": 16, "closing": 23}[t.routine]
                 db.add(RoutineCheck(date=day, task_id=t.id, done_by=rng.choice(STAFF_NAMES),
                                     done_at=dt.datetime.combine(day, dt.time(hour, rng.randint(0, 29)))))
+
+
+# sample staff, PINs 1111..5555 for the demo; morning 10:00-17:00, evening 17:00-00:00
+STAFF = [("Sara", "Shift lead", "1111"), ("Omar", "Crepe maker", "2222"), ("Lina", "Cashier", "3333"),
+         ("Faisal", "Crepe maker", "4444"), ("Huda", "Cashier", "5555")]
+MORNING, EVENING = (dt.time(10), dt.time(17)), (dt.time(17), dt.time(0))
+
+
+def _seed_staff(db: Session) -> None:
+    from .auth import hash_password
+    rng = random.Random(5)
+    members = [StaffMember(name=n, role=r, pin_hash=hash_password(p)) for n, r, p in STAFF]
+    db.add_all(members)
+    db.flush()
+    today = dt.date.today()
+    for d in range(-14, 7):
+        day = today + dt.timedelta(days=d)
+        off = members[(day.toordinal()) % len(members)]  # one person off each day, rotating
+        working = [m for m in members if m is not off]
+        for i, m in enumerate(working):
+            start, end = MORNING if i % 2 == 0 else EVENING
+            db.add(Shift(staff_id=m.id, date=day, start=start, end=end))
+            if d < 0 and rng.random() > 0.04:  # past days: most people come, some late
+                late = rng.choice([0, 0, 0, 0, 2, 5, 14, 22])
+                cin = dt.datetime.combine(day, start) + dt.timedelta(minutes=late - 5)
+                cout = dt.datetime.combine(day + dt.timedelta(days=1) if end < start else day, end) + dt.timedelta(minutes=rng.randint(0, 15))
+                db.add(Attendance(staff_id=m.id, date=day, clock_in=cin, clock_out=cout))
+            if d == 0 and dt.datetime.now() > dt.datetime.combine(day, start) and start < dt.time(12):  # today's morning shift is in
+                db.add(Attendance(staff_id=m.id, date=day, clock_in=dt.datetime.combine(day, start) - dt.timedelta(minutes=4)))

@@ -261,3 +261,23 @@ details.table td:last-child, details.table th:last-child { text-align: right; }
 .sheet h3 .muted { font-size: 13px; font-weight: 600; }
 .sheet .task { width: 100%; text-align: left; }
 .sheet .task:first-of-type { border-top: 0; }
+.sched { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 13px; }
+.sched th, .sched td { padding: 8px 4px; text-align: center; border-top: 1px solid var(--line); }
+.sched tr:first-child th { border-top: 0; font-weight: 700; }
+.sched th:first-child { text-align: left; font-weight: 700; }
+.sched .now { background: var(--brand-soft); }
+.sched .pill { display: inline-block; padding: 4px 7px; border-radius: 8px; font-weight: 700; white-space: nowrap; }
+.sched .pill.am { background: var(--accent-soft); color: var(--accent-2); }
+.sched .pill.pm { background: var(--brand); color: #fff; }
+.sheet-bg.center { justify-content: center; align-items: center; }
+.pinpad { background: var(--paper); border-radius: 28px; padding: 26px; width: 340px; text-align: center; box-shadow: var(--shadow-lift); display: flex; flex-direction: column; gap: 12px; }
+.pinpad h2 { margin: 0; font-size: 22px; font-weight: 800; }
+.pin-dots { display: flex; justify-content: center; gap: 14px; margin: 6px 0; }
+.pin-dots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--brand); }
+.pin-dots i.on { background: var(--brand); }
+.keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.keys button { height: 62px; border-radius: 16px; background: var(--cloud); font-size: 24px; font-weight: 800; }
+.keys button:disabled { visibility: hidden; }
+.keys button:active { background: var(--accent-soft); }
+.sheet .who { margin-top: 10px; display: grid; gap: 6px; font-weight: 700; font-size: 14px; }
+.sheet .who select { height: 46px; border-radius: 12px; border: 1px solid var(--line); padding: 0 12px; font: inherit; background: var(--paper); }

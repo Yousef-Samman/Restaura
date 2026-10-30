@@ -6,7 +6,7 @@ import json
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import finance, forecast, routines, stock
+from .. import finance, forecast, routines, staff, stock
 from ..models import AgentRun, Order, PurchaseOrder
 from .llm import LLM
 
@@ -38,6 +38,8 @@ def facts(db: Session) -> dict:
         "drafts_waiting": [{"supplier": po.supplier.name, "lines": len(po.lines)} for po in drafts],
         "orders_on_the_way": sent,
         "routines_overdue": [{"routine": r["label"], "due": r["due"], "missing": r["total"] - r["done"]} for r in routines.today_view(db) if r["overdue"]],
+        "staff_missing": [r["staff"] for r in staff.today_view(db)["shifts"] if r["status"] == "missing"],
+        "staff_late_today": [{"name": r["staff"], "minutes": r["late_min"]} for r in staff.today_view(db)["shifts"] if r["status"] == "late"],
         "negative_stock": [r["name"] for r in report if r["status"] == "negative"],
         "below_minimum": [r["name"] for r in report if r["status"] == "low"],
         "runs_out_this_week_no_order": [{"name": i["name"], "date": i["runs_out"]} for i in fc["ingredients"]
@@ -53,6 +55,8 @@ def priorities(f: dict) -> list[dict]:
     if f["drafts_waiting"]:
         n = len(f["drafts_waiting"])
         out.append({"level": "warn", "text": f"{n} supplier {'order is' if n == 1 else 'orders are'} waiting for your approval.", "go": "orders"})
+    if f["staff_missing"]:
+        out.append({"level": "bad", "text": f"Not clocked in for their shift: {', '.join(f['staff_missing'])}.", "go": "staff"})
     for r in f["routines_overdue"]:
         out.append({"level": "warn", "text": f"{r['routine']} checklist is late: {r['missing']} {'task' if r['missing'] == 1 else 'tasks'} not done (due {r['due']}).", "go": "routines"})
     if f["below_minimum"]:

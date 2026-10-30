@@ -128,17 +128,41 @@ async function charge() {
   } catch (e) { toast(e.message, true); renderCart(); }
 }
 
+// clock in and out with a PIN
+let pin = "";
+function renderPin() {
+  $("pin-dots").innerHTML = [0, 1, 2, 3].map((i) => `<i class="${i < pin.length ? "on" : ""}"></i>`).join("");
+}
+async function pressKey(k) {
+  if (k === "⌫") pin = pin.slice(0, -1);
+  else if (k && pin.length < 4) pin += k;
+  renderPin();
+  if (pin.length === 4) {
+    try {
+      const r = await api("/api/staff/clock", { method: "POST", body: JSON.stringify({ pin }) });
+      toast(r.action === "in" ? `Welcome, ${r.name}. Clocked in at ${r.at}.` : `Bye, ${r.name}. Clocked out at ${r.at} (${r.hours} h).`);
+      $("pin-sheet").hidden = true;
+    } catch (e) { toast(e.message, true); }
+    pin = ""; renderPin();
+  }
+}
+
 // daily checklists: staff tick tasks here; the manager sees them in Routines
 async function loadTasks(open = false) {
-  const r = await api("/api/routines");
+  const [r, onShift] = await Promise.all([api("/api/routines"), api("/api/staff/on-shift")]);
   const late = r.filter((x) => x.overdue).length;
   $("tasks-btn").innerHTML = `${ICONS.list}Tasks${late ? `<span class="dot">${late}</span>` : ""}`;
   if (!open && $("sheet").hidden) return;
   $("sheet").hidden = false;
-  $("sheet-body").innerHTML = r.map((x) => `<section><h3>${x.label} <span class="muted">due ${x.due} · ${x.done}/${x.total}</span>${x.overdue ? ' <span class="chip negative">Late</span>' : ""}</h3>
+  let who = "";
+  try { who = localStorage.getItem("restaura-who") || ""; } catch {}
+  if (!onShift.includes(who)) who = onShift[0] || "";
+  $("sheet-body").innerHTML = `<label class="field who">Who is ticking?<select id="who">${onShift.length ? onShift.map((n) => `<option ${n === who ? "selected" : ""}>${esc(n)}</option>`).join("") : '<option value="">Nobody is clocked in</option>'}</select></label>` + r.map((x) => `<section><h3>${x.label} <span class="muted">due ${x.due} · ${x.done}/${x.total}</span>${x.overdue ? ' <span class="chip negative">Late</span>' : ""}</h3>
     ${x.tasks.map((t) => `<button class="task ${t.done ? "done" : ""}" data-task="${t.id}"><span class="tick">${ICONS.check}</span><span>${esc(t.text)}${t.done ? `<br><span class="muted">${esc(t.done_by || "")} · ${t.done_at}</span>` : ""}</span></button>`).join("")}</section>`).join("");
   $("sheet-body").querySelectorAll("[data-task]").forEach((b) => (b.onclick = async () => {
-    await api(`/api/routines/tasks/${b.dataset.task}/toggle`, { method: "POST", body: "{}" });
+    const name = $("who").value;
+    try { localStorage.setItem("restaura-who", name); } catch {}
+    await api(`/api/routines/tasks/${b.dataset.task}/toggle`, { method: "POST", body: JSON.stringify({ done_by: name || null }) });
     loadTasks(true);
   }));
 }
@@ -161,6 +185,11 @@ async function init() {
   $("search").oninput = (e) => { state.q = e.target.value.trim().toLowerCase(); render(); };
   $("charge").onclick = charge;
   $("tasks-btn").onclick = () => loadTasks(true);
+  $("clock-btn").innerHTML = `${ICONS.clock}Clock in`;
+  $("keys").innerHTML = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"].map((k) => `<button ${k ? "" : "disabled"} data-k="${k}">${k}</button>`).join("");
+  $("keys").querySelectorAll("button").forEach((b) => (b.onclick = () => pressKey(b.dataset.k)));
+  $("clock-btn").onclick = () => { pin = ""; renderPin(); $("pin-sheet").hidden = false; };
+  $("pin-close").onclick = () => { $("pin-sheet").hidden = true; };
   $("sheet-close").onclick = () => { $("sheet").hidden = true; };
   loadTasks();
   $("clear").onclick = () => { state.cart = []; renderCart(); refreshSuggestions(); };

@@ -9,12 +9,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import auth, finance, forecast, mailer, routines, stock
+from . import auth, finance, forecast, mailer, routines, staff as staffing, stock
 from .agents import cashier, invoice, overview, stock_agent
 from .agents.llm import LLM
 from .config import Settings, get_settings
 from .db import Base, make_engine, make_sessionmaker
-from .models import (AgentRun, Device, Expense, RoutineTask, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
+from .models import (AgentRun, Device, Expense, RoutineTask, Shift, StaffMember, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
                      PurchaseOrderLine, RecipeLine, SuggestionEvent)
 from .seed import seed
 
@@ -47,6 +47,23 @@ class ExpenseIn(BaseModel):
     amount: float = Field(gt=0)
     note: str | None = Field(default=None, max_length=200)
     date: dt.date | None = None
+
+
+class ClockIn(BaseModel):
+    pin: str = Field(pattern=r"^\d{4}$")
+
+
+class StaffIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    role: str = Field(min_length=1, max_length=60)
+    pin: str = Field(pattern=r"^\d{4}$")
+
+
+class ShiftIn(BaseModel):
+    staff_id: int
+    date: dt.date
+    start: dt.time
+    end: dt.time
 
 
 class TaskToggle(BaseModel):
@@ -280,6 +297,47 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "categories": [{"category": c, "sales": round(v, 2)} for c, v in cats],
             "today_orders": [{"at": a.isoformat() + "Z", "total": t} for a, t in today_orders],
         }
+
+    # ---- staff and attendance -------------------------------------------------------
+    @app.post("/api/staff/clock")
+    def clock(body: ClockIn, db: Session = Depends(get_db), _=Depends(staff)):
+        r = staffing.clock(db, body.pin)
+        if not r:
+            raise HTTPException(404, "PIN not recognised")
+        db.commit()
+        return r
+
+    @app.get("/api/staff/on-shift")
+    def on_shift(db: Session = Depends(get_db), _=Depends(staff)):
+        return staffing.on_shift(db)
+
+    @app.get("/api/staff/today")
+    def staff_today(db: Session = Depends(get_db), _=Depends(manager_only)):
+        return staffing.today_view(db)
+
+    @app.get("/api/staff/week")
+    def staff_week(db: Session = Depends(get_db), _=Depends(manager_only)):
+        return staffing.week(db)
+
+    @app.post("/api/staff")
+    def add_staff(body: StaffIn, db: Session = Depends(get_db), _=Depends(manager_only)):
+        if any(auth.verify_password(body.pin, m.pin_hash) for m in db.scalars(select(StaffMember).where(StaffMember.active))):
+            raise HTTPException(409, "Someone already uses this PIN")
+        m = StaffMember(name=body.name, role=body.role, pin_hash=auth.hash_password(body.pin))
+        db.add(m)
+        db.commit()
+        return {"id": m.id}
+
+    @app.post("/api/shifts")
+    def add_shift(body: ShiftIn, db: Session = Depends(get_db), _=Depends(manager_only)):
+        if not db.get(StaffMember, body.staff_id):
+            raise HTTPException(404, "Staff member not found")
+        old = db.scalar(select(Shift).where(Shift.staff_id == body.staff_id, Shift.date == body.date))
+        if old:
+            db.delete(old)
+        db.add(Shift(staff_id=body.staff_id, date=body.date, start=body.start, end=body.end))
+        db.commit()
+        return {"ok": True}
 
     # ---- routines (daily checklists) ---------------------------------------------------
     @app.get("/api/routines")

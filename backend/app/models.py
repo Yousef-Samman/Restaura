@@ -196,3 +196,33 @@ class RoutineCheck(Base):
     task_id: Mapped[int] = mapped_column(ForeignKey("routine_task.id"))
     done_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
     done_by: Mapped[str | None] = mapped_column(String(120))
+
+
+class StaffMember(Base):
+    __tablename__ = "staff_member"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    role: Mapped[str] = mapped_column(String(60))
+    pin_hash: Mapped[str] = mapped_column(String(200))  # 4-digit PIN for clocking in on the cashier iPad
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Shift(Base):
+    """A planned shift. end may be past midnight (end < start)."""
+    __tablename__ = "shift"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    staff_id: Mapped[int] = mapped_column(ForeignKey("staff_member.id"))
+    date: Mapped[dt.date] = mapped_column(Date)
+    start: Mapped[dt.time] = mapped_column()
+    end: Mapped[dt.time] = mapped_column()
+    staff: Mapped[StaffMember] = relationship()
+
+
+class Attendance(Base):
+    __tablename__ = "attendance"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    staff_id: Mapped[int] = mapped_column(ForeignKey("staff_member.id"))
+    date: Mapped[dt.date] = mapped_column(Date)
+    clock_in: Mapped[dt.datetime] = mapped_column(DateTime)
+    clock_out: Mapped[dt.datetime | None] = mapped_column(DateTime)
+    staff: Mapped[StaffMember] = relationship()

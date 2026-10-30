@@ -15,6 +15,7 @@
     <div class="logo"><img src="/static/logo.svg" alt="Restaura"></div>
     <div id="cats" style="display:contents"></div>
     <div class="spacer"></div>
+    <button class="cat" id="clock-btn"></button>
     <button class="cat" id="tasks-btn"></button>
     <button class="cat" id="logout"></button>
   </nav>
@@ -55,6 +56,15 @@
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
     <header><h2 id="sheet-title">Today's checklists</h2><button class="btn ghost" id="sheet-close">Close</button></header>
     <div id="sheet-body"></div>
+  </div>
+</div>
+<div class="sheet-bg center" id="pin-sheet" hidden>
+  <div class="pinpad" role="dialog" aria-modal="true" aria-labelledby="pin-title">
+    <h2 id="pin-title">Clock in or out</h2>
+    <div class="muted">Enter your 4-digit PIN</div>
+    <div class="pin-dots" id="pin-dots"></div>
+    <div class="keys" id="keys"></div>
+    <button class="btn ghost" id="pin-close">Cancel</button>
   </div>
 </div>
 <script src="/static/icons.js"></script>
