@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, object_session, selectinload
 
 from . import auth, evaluation, finance, forecast, mailer, routines, sales_report, staff as staffing, stock
 from . import nightly
@@ -18,8 +18,8 @@ from .agents.llm import LLM
 from .config import Settings, get_settings
 from .db import Base, make_engine, make_sessionmaker
 from .models import (AgentRun, Device, Expense, RoutineTask, Shift, StaffMember, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
-                     PurchaseOrderLine, RecipeLine, SuggestionEvent)
-from .seed import seed
+                     PurchaseOrderLine, RecipeLine, StockMove, SuggestionEvent)
+from .seed import STORE_UTC_OFFSET, seed
 
 STATIC = Path(__file__).parent / "static"
 
@@ -297,12 +297,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                           .order_by(func.sum(OrderLine.qty * OrderLine.price).desc())).all()
         today_orders = db.execute(select(Order.created_at, Order.total)
                                   .where(Order.business_date == today_d, Order.source == "cashier")).all()
+        # imported POS reports have no time of day, so they are left out of the hourly view
+        timed = db.execute(select(Order.created_at, Order.total)
+                           .where(Order.business_date >= since, Order.source != "import")).all()
         return {
             "daily": [{"date": d.isoformat(), "sales": round(daily.get(d, 0), 2), "orders": counts.get(d, 0),
                        "helper_sales": round(helper.get(d, 0), 2)} for d in dates],
             "top_items": [{"name": n, "qty": q, "sales": round(v, 2)} for n, q, v in top],
             "categories": [{"category": c, "sales": round(v, 2)} for c, v in cats],
             "today_orders": [{"at": a.isoformat() + "Z", "total": t} for a, t in today_orders],
+            # hour of day in store time, so the chart is right whatever the viewer's time zone
+            "period_orders": [{"at": a.isoformat() + "Z", "hour": (a + STORE_UTC_OFFSET).hour, "total": t} for a, t in timed],
         }
 
     # ---- staff and attendance -------------------------------------------------------
@@ -450,8 +455,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return None
         return f"https://wa.me/{''.join(c for c in number if c.isdigit())}?text={quote(order_text(po))}"
 
+    def po_ref(po: PurchaseOrder) -> str:
+        return f"PO {po.id}"
+
+    def po_delivery(po: PurchaseOrder) -> dict | None:
+        """What arrived for a received order, from its stock moves."""
+        if po.status != "received":
+            return None
+        moves = object_session(po).scalars(select(StockMove).where(
+            StockMove.kind == "delivery", (StockMove.ref == po_ref(po)) | StockMove.ref.startswith(po_ref(po) + " · "))).all()
+        if not moves:
+            return {"at": None, "lines": []}
+        names = {l.ingredient_id: (l.ingredient.name, l.ingredient.unit) for l in po.lines}
+        return {"at": max(m.at for m in moves).isoformat(),
+                "lines": [{"ingredient_id": m.ingredient_id, "ingredient": names.get(m.ingredient_id, ("", ""))[0],
+                           "unit": names.get(m.ingredient_id, ("", ""))[1], "qty": m.qty} for m in moves]}
+
     def po_dict(po: PurchaseOrder) -> dict:
+        expected = (po.sent_at + dt.timedelta(days=po.supplier.lead_days)).date().isoformat() if po.sent_at else None
         return {"id": po.id, "supplier": po.supplier.name, "status": po.status, "note": po.note,
+                "expected": expected, "delivery": po_delivery(po),
                 "channel": po.supplier.channel, "whatsapp_link": whatsapp_link(po) if po.status == "sent" else None,
                 "created_at": po.created_at.isoformat(), "sent_at": po.sent_at.isoformat() if po.sent_at else None,
                 "lead_days": po.supplier.lead_days, "changed": any(split_change(l.reason)[1] for l in po.lines),
@@ -512,8 +535,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if po.status != "sent":
             raise HTTPException(409, "Only sent orders can be received")
         for l in body.lines:
-            stock.receive(db, l.ingredient_id, l.qty, ref=body.invoice_ref or f"PO {po.id}")
-        finance.record_purchase(db, [(l.ingredient_id, l.qty) for l in body.lines], f"{po.supplier.name} · {body.invoice_ref or f'PO {po.id}'}")
+            stock.receive(db, l.ingredient_id, l.qty, ref=po_ref(po) + (f" · {body.invoice_ref[:40]}" if body.invoice_ref else ""))
+        finance.record_purchase(db, [(l.ingredient_id, l.qty) for l in body.lines], f"{po.supplier.name} · {body.invoice_ref or po_ref(po)}")
         po.status = "received"
         db.commit()
         return po_dict(po)
