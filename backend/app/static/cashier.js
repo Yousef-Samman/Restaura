@@ -63,6 +63,8 @@ state.step = "order";
 
 function add(item, eventId = null) {
   if (state.step === "paid") { state.paid = null; state.step = "order"; }
+  // for the staff coach: time from the first item to paid, and items taken off before paying
+  if (!state.cart.length) { state.startedAt = Date.now(); state.removed = 0; }
   const line = state.cart.find((l) => l.item.id === item.id);
   if (line) { line.qty += 1; if (eventId) line.eventId = eventId; }
   else state.cart.push({ item, qty: 1, eventId });
@@ -135,7 +137,7 @@ function renderCart() {
       else { state.payments.push({ method: "cash", amount: given }); go("pay"); }
     };
   }
-  pane.querySelectorAll("[data-minus]").forEach((b) => (b.onclick = () => { const l = state.cart[+b.dataset.minus]; l.qty -= 1; if (!l.qty) state.cart.splice(+b.dataset.minus, 1); renderCart(); }));
+  pane.querySelectorAll("[data-minus]").forEach((b) => (b.onclick = () => { const l = state.cart[+b.dataset.minus]; l.qty -= 1; state.removed = (state.removed || 0) + 1; if (!l.qty) state.cart.splice(+b.dataset.minus, 1); renderCart(); }));
   pane.querySelectorAll("[data-plus]").forEach((b) => (b.onclick = () => add(state.cart[+b.dataset.plus].item)));
   const shown = state.step === "paid" ? state.paid.total : t, net = shown / 1.15;
   $("subtotal").textContent = sar2(net);
@@ -200,7 +202,11 @@ async function tapped() {
 
 async function closeBill(change) {
   try {
-    const out = await api("/api/orders", { method: "POST", body: JSON.stringify({ lines: state.cart.map((l) => ({ item_id: l.item.id, qty: l.qty, suggestion_event_id: l.eventId })) }) });
+    const methods = new Set(state.payments.map((p) => p.method));
+    const out = await api("/api/orders", { method: "POST", body: JSON.stringify({
+      lines: state.cart.map((l) => ({ item_id: l.item.id, qty: l.qty, suggestion_event_id: l.eventId })),
+      seconds_to_pay: state.startedAt ? Math.min(3600, Math.round((Date.now() - state.startedAt) / 1000)) : null,
+      removed_items: Math.min(100, state.removed || 0), payment: methods.size > 1 ? "split" : [...methods][0] || null }) });
     state.paid = { id: out.order_id, total: out.total, payments: state.payments, change, addons: state.cart.filter((l) => l.eventId).length };
     state.cart = []; state.suggest = null; state.payments = []; state.step = "paid";
     renderCart();
@@ -215,7 +221,7 @@ async function loadToday() {
   const t = await api("/api/today");
   $("k-orders").textContent = t.orders;
   $("k-sales").textContent = sar(t.sales);
-  $("k-addons").textContent = `${t.suggestions_accepted} · ${sar(t.suggested_sales)}`;
+  $("k-addons").textContent = `${sar(t.suggested_sales)} · ${t.suggestions_accepted} sold`;
 }
 
 // clock in and out with a PIN
@@ -275,5 +281,23 @@ async function init() {
   loadTasks();
   $("tap-sim").onclick = tapped;
   $("tap-cancel").onclick = () => { $("tap").hidden = true; };
+  showTip();
+}
+
+// the Staff agent's tip for this person, once after they sign in, until they tap Got it
+async function showTip() {
+  const r = await api("/api/me/tip").catch(() => ({ tip: null }));
+  if (!r.tip) return;
+  const prev = r.previous?.result;
+  const said = prev && prev.verdict === "worked" ? "Your last tip worked. Nice work, keep it up."
+    : prev && prev.verdict === "worse" ? "Your last tip didn't move the number yet. This one is a fresh start." : "";
+  const d = document.createElement("div");
+  d.className = "ipad-tip";
+  d.innerHTML = `<div class="box" role="dialog" aria-modal="true" aria-labelledby="tip-h">
+    <div class="tip-who"><span class="tip-ic">${ICONS.staffAgent}</span><div><b>Staff agent</b><div class="why">Your tip for this week</div></div></div>
+    <h3 id="tip-h">${esc(r.tip.tip)}</h3>${said ? `<div class="why">${said}</div>` : ""}
+    <button id="tip-ok">Got it, start my shift</button></div>`;
+  document.body.append(d);
+  $("tip-ok").onclick = async () => { d.remove(); await api(`/api/me/tip/${r.tip.id}/seen`, { method: "POST" }).catch(() => {}); };
 }
 init().catch((e) => toast(e.message, true));

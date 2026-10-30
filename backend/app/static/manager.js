@@ -7,25 +7,30 @@ const TABS = [
   { id: "sales", label: "Sales", icon: "sales" },
   { id: "orders", label: "Orders", icon: "orders" },
   { id: "stock", label: "Stock", icon: "stock" },
+  { id: "staff", label: "Staff", icon: "people" },
   { id: "more", label: "More", icon: "more" },
 ];
 // sections reached from the More tab
 const MORE = [
-  { id: "deliveries", label: "Deliveries", icon: "delivery", sub: "Invoice photos, manual deliveries, POS upload" },
+  { id: "deliveries", label: "Deliveries", icon: "delivery", sub: "Invoice photos and manual deliveries" },
   { id: "forecast", label: "Forecast", icon: "sales", sub: "Next 7 days, tomorrow's prep, ingredients needed" },
+  { id: "suppliers", label: "Suppliers", icon: "orders", sub: "Who delivers what, and how orders reach them" },
   { id: "expenses", label: "Expenses", icon: "wallet", sub: "Costs and estimated profit" },
   { id: "routines", label: "Routines", icon: "check", sub: "Opening, mid-shift and closing checklists" },
-  { id: "staff", label: "Staff", icon: "people", sub: "Shifts, attendance and hours" },
   { id: "evaluation", label: "Agent evaluation", icon: "gauge", sub: "How the AI agents score on data they have never seen" },
   { id: "devices", label: "Cashier iPads", icon: "device", sub: "Pair or remove the iPads the cashier signs in on" },
 ];
 // pages reached from a link, not from the tab bar; they show a back arrow
-const SUB = [{ id: "steps", label: "Stock agent", icon: "stock", back: "today" }];
+const SUB = [{ id: "steps", label: "Stock agent", icon: "stock", back: "today" },
+  { id: "person", label: "Staff", icon: "people", back: "staff" }, { id: "review", label: "Weekly review", icon: "people", back: "staff" },
+  { id: "supplier", label: "Supplier", icon: "orders", back: "suppliers" }];
 const SECTION = (id) => [...TABS, ...MORE, ...SUB].find((t) => t.id === id);
 let expDays = 30;
 let tab = location.hash.slice(1) || "today";
 let status = {};
 let salesDays = 14;
+let person = null; // the staff member open on the person and review pages
+let supplier = null; // the supplier being edited, or "new"
 
 async function api(path, opts = {}) {
   const isForm = opts.body instanceof FormData;
@@ -46,7 +51,8 @@ function toast(msg, err = false) {
 
 async function renderTabs() {
   const today = await api("/api/today").catch(() => ({}));
-  const active = MORE.some((m) => m.id === tab) ? "more" : SUB.find((x) => x.id === tab)?.back || tab;
+  const parent = SUB.find((x) => x.id === tab)?.back || tab;
+  const active = MORE.some((m) => m.id === parent) ? "more" : parent;
   $("tabs").innerHTML = TABS.map((t) => `<button data-tab="${t.id}" ${t.id === active ? 'aria-current="page"' : ""}><span class="ti">${ICONS[t.icon]}</span>${t.label}
     ${t.id === "orders" && today.changed_drafts ? `<span class="dot warn" aria-label="An order needs a look">!</span>` : t.id === "orders" && today.drafts ? `<span class="dot">${today.drafts}</span>` : ""}${t.id === "stock" && today.low_stock ? `<span class="dot">${today.low_stock}</span>` : ""}</button>`).join("");
   $("tabs").querySelectorAll("button").forEach((b) => (b.onclick = () => go(b.dataset.tab)));
@@ -56,11 +62,13 @@ function go(t) { tab = t; location.hash = t; render(); window.scrollTo(0, 0); }
 
 async function render() {
   if (!SECTION(tab)) tab = "today";
+  if (["person", "review"].includes(tab) && !person) tab = "staff";
+  if (tab === "supplier" && !supplier) tab = "suppliers";
   $("title").textContent = SECTION(tab).label;
   const sub = SUB.find((x) => x.id === tab) || (MORE.some((m) => m.id === tab) ? { back: "more" } : null);
   $("back").hidden = !sub;
   $("back").onclick = () => go(sub.back);
-  $("back").setAttribute("aria-label", sub?.back === "more" ? "Back to More" : "Back to Today");
+  $("back").setAttribute("aria-label", sub ? `Back to ${SECTION(sub.back).label}` : "Back");
   document.body.classList.toggle("has-hero", ["today", "forecast", "evaluation"].includes(tab));
   renderTabs();
   const view = $("view");
@@ -154,7 +162,161 @@ function stockList() {
   }).join("");
 }
 
+// ---- Staff agent: coaching for people who take orders, weekly reviews for everyone ----
+const initial = (n) => esc(n.trim()[0] || "?").toUpperCase();
+const pts = (v) => (v == null ? "–" : `${Math.round(v * 100)}%`);
+const REVIEW = [["quality", "Quality of work", "Taste, look, following the recipe"], ["speed", "Speed", "Keeps up at the rush"],
+  ["cleanliness", "Cleanliness", "Station and hygiene"], ["teamwork", "Teamwork", "Helps others, good attitude"]];
+// a tip's number, written the way it is measured
+function focusVal(focus, v) {
+  if (v == null) return "–";
+  if (focus === "time_to_pay") return `${Math.round(v)} s`;
+  if (focus === "checklists") return `${Math.round(v)}`;
+  if (focus.startsWith("review_")) return `${fmt(v)}/5`;
+  return pts(v);
+}
+const factLine = (f) => f.shifts ? `On time ${f.on_time_shifts} of ${f.shifts} shifts · ${f.checklists} checklist tasks` : `No shifts this week · ${f.checklists} checklist tasks`;
+
+function staffAgentCard(c) {
+  const r = c.last_run;
+  return `<div class="agent">
+    <div class="agent-h"><span class="badge">${ICONS.staffAgent}</span><div><b>Staff agent</b><small>${r ? `Last check ${when(r.at)} · ${byWhom(r)}` : "Not run yet this week"} · runs every Saturday night</small></div></div>
+    <p class="big">${r ? esc(r.headline) : "Once a week the agent looks at how each person worked and gives each one tip for the next week."}</p>
+    <button class="secondary-btn" id="run-staff">Run staff check now</button>
+  </div>`;
+}
+
+function coachHtml(c) {
+  const takers = c.people.filter((p) => p.takes_orders);
+  const avg = c.averages;
+  const trend = (p) => p.trend == null ? "" : `<span class="trend ${p.trend > 0 ? "up" : p.trend < 0 ? "down" : ""}">${p.trend > 0 ? "▲" : p.trend < 0 ? "▼" : ""} ${Math.abs(p.trend)} ${Math.abs(p.trend) === 1 ? "pt" : "pts"}</span>`;
+  const due = c.people.length - c.reviews_done;
+  return `<div class="section first">${staffAgentCard(c)}</div>
+    ${takers.length ? `<div class="section"><h2>Selling on the iPad · last 7 days</h2><div class="panel">
+      ${takers.map((p) => `<button class="coach-row" data-person="${p.id}"><span class="av">${initial(p.name)}</span><span class="who"><b>${esc(p.name)} <span>· ${esc(p.role)}</span></b><span>Add-ons yes ${pts(p.sales.offers)} · Bill ${sar(p.sales.avg_bill)} · ${p.sales.time_to_pay ?? "–"} s to pay</span></span>${trend(p)}<span class="chev">${ICONS.chevron}</span></button>`).join("")}
+      <div class="muted" style="font-size:13px;margin-top:8px">Only people who take orders on the iPad are measured on selling. Team: add-ons yes ${pts(avg.offers)}, bill ${sar(avg.avg_bill)}. Add-ons yes = suggested add-ons the customer said yes to. Each person only ever sees their own tip.</div>
+    </div></div>` : ""}
+    <div class="section"><h2>Weekly reviews · ${c.reviews_done} of ${c.people.length} done</h2><div class="panel">
+      <div class="muted" style="font-size:13px;margin-bottom:6px">${due ? "Due by Saturday. One minute each." : "All done for this week."} Everyone is reviewed on their own job: quality, speed, cleanliness and teamwork. The Staff agent turns your review and the week's facts into each person's tip.</div>
+      ${c.people.map((p) => `<div class="who-row"><span class="av">${initial(p.name)}</span><button class="t" data-person="${p.id}" style="text-align:left"><b>${esc(p.name)} <span>· ${esc(p.role)}</span></b><span>${p.review_done && p.review ? `Reviewed · ${fmt(p.review.average)} / 5` : factLine(p.facts)}</span></button><button class="mini ${p.review_done ? "done" : ""}" data-review="${p.id}">${p.review_done ? "Done" : "Review"}</button></div>`).join("")}
+    </div></div>`;
+}
+
+// what the agent has learned about this person from past tips and reviews; it reads the same history each week
+function learnedHtml(p) {
+  const h = p.history;
+  if (!h) return "";
+  const name = (f) => esc(FOCUS_NAMES[f] || f);
+  const rv = h.review_averages_newest_first.slice().reverse();
+  const rows = [
+    h.works_for_them.length && `<div class="list-item"><span>Works for ${esc(p.name)}</span><b style="text-align:right">${h.works_for_them.map(name).join(", ")}</b></div>`,
+    h.did_not_work.length && `<div class="list-item"><span>Didn't move after two tries</span><b style="text-align:right">${h.did_not_work.map(name).join(", ")}</b></div>`,
+    rv.length > 1 && `<div class="list-item"><span>Review average, oldest to newest</span><b>${rv.map(fmt).join(" → ")}</b></div>`,
+    `<div class="list-item"><span>Tips so far</span><b>${h.past_tips.length} · ${h.past_tips.filter((t) => t.verdict === "worked").length} worked</b></div>`,
+  ].filter(Boolean);
+  return `<div class="section"><h2>What the agent has learned</h2><div class="panel">${rows.join("")}
+    <div class="muted" style="font-size:13px;margin-top:8px">Each week the agent reads this history before it writes the next tip: it builds on what works for ${esc(p.name)} and drops what didn't.</div></div></div>`;
+}
+const FOCUS_NAMES = { offers: "offering add-ons", time_to_pay: "closing bills faster", removed: "fewer items taken off", on_time: "starting on time",
+  checklists: "checklists", review_quality: "quality", review_speed: "speed", review_cleanliness: "cleanliness", review_teamwork: "teamwork" };
+
+function tipResultHtml(t) {
+  if (!t) return "";
+  const r = t.result;
+  if (!r) return `<div class="section"><h2>Last tip</h2><div class="panel result"><b>"${esc(t.tip)}"</b><div class="cmp">Too early to tell. The agent checks after about a week.</div></div></div>`;
+  const higher = !["time_to_pay", "removed"].includes(r.focus);
+  const scale = (v) => r.focus.startsWith("review_") ? (v / 5) * 100 : r.focus === "time_to_pay" ? Math.min(100, (v / 90) * 100) : r.focus === "checklists" ? Math.min(100, v * 5) : Math.min(100, v * 100);
+  const chip = { worked: ["ok", "Worked"], worse: ["negative", "Went the wrong way"], "no change": ["draft", "No change yet"] }[r.verdict];
+  return `<div class="section"><h2>Did the last tip work?</h2><div class="panel result">
+    <b>"${esc(t.tip)}"</b><div class="cmp">${esc(t.label)}${higher ? "" : " (lower is better)"}</div>
+    <div class="ba"><span class="cmp">Before</span><div class="bar"><i class="was" style="width:${scale(r.before)}%"></i></div><b>${focusVal(r.focus, r.before)}</b></div>
+    <div class="ba"><span class="cmp">After</span><div class="bar"><i style="width:${scale(r.after)}%"></i></div><b>${focusVal(r.focus, r.after)}</b></div>
+    <span class="chip ${chip[0]}" style="justify-self:start;margin-top:6px">${chip[1]}</span>
+  </div></div>`;
+}
+
 const VIEWS = {
+  async suppliers() {
+    const r = await api("/api/suppliers");
+    const contact = (x) => x.channel === "whatsapp" ? `WhatsApp · +${esc(x.phone)}` : `Email · ${esc(x.email)}`;
+    return `<div class="section first"><div class="panel">
+        ${r.suppliers.map((x) => `<div class="sup"><div class="h"><b>${esc(x.name)}</b><button class="secondary-btn" data-sup="${x.id}">Edit</button></div>
+          <div class="m">${contact(x)} · Delivers in ${x.lead_days} ${x.lead_days === 1 ? "day" : "days"}</div>
+          <div class="tags">${x.ingredients.map((i) => `<span>${esc(i.name)}</span>`).join("") || '<span class="muted">No ingredients yet</span>'}</div></div>`).join("") || '<div class="muted">No suppliers yet.</div>'}
+      </div></div>
+      <div class="section"><button class="brass full" data-sup="new">Add a supplier</button></div>`;
+  },
+
+  async supplier() {
+    const r = await api("/api/suppliers");
+    const x = supplier === "new" ? { channel: "email", lead_days: 1, ingredients: [] } : r.suppliers.find((s) => s.id === supplier);
+    if (!x) { supplier = null; return VIEWS.suppliers(); }
+    $("title").textContent = x.name || "New supplier";
+    window._supCh = x.channel;
+    const owner = Object.fromEntries(r.suppliers.map((s) => [s.id, s.name]));
+    const mine = new Set(x.ingredients.map((i) => i.id));
+    return `<div class="section first"><div class="panel form">
+        <label class="field">Name<input id="su-name" maxlength="120" value="${esc(x.name || "")}"></label>
+        <div class="field">Send orders by</div>
+        <div class="seg"><button data-ch="email" aria-pressed="${x.channel === "email"}">Email</button><button data-ch="whatsapp" aria-pressed="${x.channel === "whatsapp"}">WhatsApp</button></div>
+        <label class="field">Email${x.channel === "email" ? "" : " (optional)"}<input id="su-email" type="email" maxlength="200" value="${esc(x.email || "")}" placeholder="orders@supplier.com"></label>
+        <label class="field">WhatsApp number${x.channel === "whatsapp" ? "" : " (optional)"}<input id="su-phone" inputmode="tel" maxlength="20" value="${esc(x.phone || "")}" placeholder="9665XXXXXXXX"></label>
+        <label class="field">Days to deliver<input id="su-lead" type="number" min="0" max="30" value="${x.lead_days}"></label>
+        <div class="field">What they supply</div>
+        <div class="checks">${r.ingredients.map((i) => `<label><input type="checkbox" value="${i.id}" ${mine.has(i.id) ? "checked" : ""}><span>${esc(i.name)}${!mine.has(i.id) && owner[i.supplier_id] ? `<small>now ${esc(owner[i.supplier_id])}</small>` : ""}</span></label>`).join("")}</div>
+        <div class="muted" style="font-size:12.5px">Each ingredient has one supplier. Ticking one here moves it from its current supplier.</div>
+        <button class="solid" id="su-save">${supplier === "new" ? "Add supplier" : "Save supplier"}</button>
+        ${supplier === "new" ? "" : `<button class="danger" id="su-rm">Remove supplier</button>
+        <div class="muted" style="font-size:12.5px">You can remove a supplier once none of its orders are on the way and its ingredients have another supplier.</div>`}
+      </div></div>`;
+  },
+
+  async person() {
+    const p = await api(`/api/staff/${person}/coach`);
+    $("title").textContent = p.name;
+    const c = window._coach;
+    const avg = c?.averages || {};
+    const f = p.facts, s = p.sales;
+    const four = s ? [["Add-ons yes", pts(s.offers), `team ${pts(avg.offers)}`], ["Avg bill", sar(s.avg_bill), `team ${sar(avg.avg_bill)}`],
+      ["Time to pay", `${s.time_to_pay ?? "–"} s`, `team ${avg.time_to_pay ? Math.round(avg.time_to_pay) : "–"} s`], ["Items removed", pts(s.removed), `team ${pts(avg.removed)}`]] : null;
+    const prev = p.tips[1];
+    return `<div class="section first"><div class="panel">
+        <b style="font-size:17px;display:block;margin-bottom:12px">${esc(p.name)} · ${esc(p.role)}</b>
+        ${four ? `<dl class="facts four">${four.map(([k, v, t]) => `<div><dt>${k}</dt><dd>${v}</dd><div class="cmp">${t}</div></div>`).join("")}</dl>
+          <div class="cmp" style="margin-top:8px">Last 7 days · ${s.orders} orders taken</div>` : ""}
+        <div class="facts2" style="margin-top:${four ? 12 : 0}px"><div>On time<b>${f.shifts ? `${f.on_time_shifts} of ${f.shifts} shifts` : "No shifts"}</b></div><div>Late, total<b>${f.late_minutes} min</b></div>
+          <div>Checklist tasks ticked<b>${f.checklists}</b></div><div>Manager's review<b>${p.review ? `${fmt(p.review.average)} / 5` : "Not yet"}</b></div></div>
+      </div></div>
+      ${p.tip ? `<div class="section"><div class="tipcard"><div class="k">${ICONS.spark} Tip for this week</div><p>"${esc(p.tip.tip)}"</p><div class="cmp">Why: ${esc(p.tip.why)}</div><div class="cmp">${p.tips[0]?.seen ? `${esc(p.name)} has seen it on the iPad.` : `${esc(p.name)} sees it on the iPad at the next sign-in.`}</div></div></div>` : `<div class="section"><div class="panel muted" style="font-size:14px">No tip yet. Run the staff check on the Staff tab.</div></div>`}
+      ${tipResultHtml(prev)}
+      ${learnedHtml(p)}
+      ${s?.by_offer?.length ? `<div class="section"><h2>Which offers land</h2><div class="panel">
+        ${s.by_offer.slice(0, 5).map((o) => `<div class="addon"><span>${esc(o.item)}</span><div class="result"><div class="bar"><i style="width:${Math.round(o.rate * 100)}%"></i></div></div><b style="text-align:right">${pts(o.rate)}</b></div>`).join("")}
+        <div class="muted" style="font-size:13px;margin-top:6px">Share of times the customer said yes when ${esc(p.name)} offered it (offered at least 5 times).</div>
+      </div></div>` : ""}
+      <div class="section"><button class="brass full" data-review="${p.id}">${p.review_done ? "Change this week's review" : "Write this week's review"}</button></div>`;
+  },
+
+  async review() {
+    const p = await api(`/api/staff/${person}/coach`);
+    const f = p.facts;
+    const ws = new Date(window._coach?.week_start + "T00:00");
+    const we = new Date(ws); we.setDate(ws.getDate() + 6);
+    const d = (x) => x.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    const cur = p.review_done ? p.reviews[0] : {};
+    window._rv = Object.fromEntries(REVIEW.map(([k]) => [k, cur[k] || 0]));
+    return `<div class="section first"><div class="panel" style="display:grid;gap:12px">
+        <b style="font-size:17px">${esc(p.name)} · ${esc(p.role)}</b>
+        <div class="muted" style="font-size:13px;margin-top:-6px">${isNaN(ws) ? "This week" : `Week of ${d(ws)} – ${d(we)}`}</div>
+        <div class="facts2"><div>On time<b>${f.shifts ? `${f.on_time_shifts} of ${f.shifts} shifts` : "No shifts"}</b></div><div>Late, total<b>${f.late_minutes} min</b></div><div>Checklist tasks ticked<b>${f.checklists}</b></div><div>Hours worked<b>${fmt(f.hours)} h</b></div></div>
+        <div class="muted" style="font-size:12.5px">These facts come from clock-ins and checklists, last 7 days. Your ratings add what the numbers can't show.</div>
+      </div></div>
+      <div class="section"><div class="panel">
+        ${REVIEW.map(([k, t, sub]) => `<div class="rate"><div class="lbl">${t}<small>${sub}</small></div><div class="dots5" role="group" aria-label="${t}">${[1, 2, 3, 4, 5].map((i) => `<button data-rate="${k}" data-v="${i}" aria-pressed="${cur[k] === i}">${i}</button>`).join("")}</div></div>`).join("")}
+        <label class="field" style="margin-top:8px">Note for the agent (optional)<textarea id="rv-note" rows="2" maxlength="200">${esc(cur.note || "")}</textarea></label>
+        <button class="brass full" id="rv-save" style="margin-top:12px;height:52px;border-radius:14px;font-weight:800">Save review</button>
+      </div></div>`;
+  },
   async devices() {
     const devs = await api("/api/devices");
     return `<div class="section first"><div class="panel">
@@ -171,14 +333,16 @@ const VIEWS = {
   },
 
   async staff() {
-    const [t, w] = await Promise.all([api("/api/staff/today"), api("/api/staff/week")]);
+    const [t, w, c] = await Promise.all([api("/api/staff/today"), api("/api/staff/week"), api("/api/staff/coach")]);
     window._st = w;
+    window._coach = c;
     const d = (iso, o) => new Date(iso + "T00:00").toLocaleDateString("en-GB", o);
     const label = { on_time: ["In", "received"], late: ["Late", "negative"], missing: ["Not in", "negative"], upcoming: ["Later", "draft"], done: ["Finished", "received"] };
     const n = (st) => t.shifts.filter((x) => x.status === st).length;
     const short = (s) => s ? s.replace(/:00/g, "") : "";
     const todayIdx = w.days.indexOf(t.date);
-    return `<div class="hero" style="margin-top:12px">
+    return `${coachHtml(c)}
+      <div class="hero" style="margin-top:12px">
         <div><div class="label">On shift now</div><div class="value num">${t.on_shift.length}</div></div>
         <div><div class="label">Shifts today</div><div class="value num">${t.shifts.length}</div></div>
         <div><div class="label">Late today</div><div class="value num" style="color:${n("late") ? "var(--warn)" : "inherit"}">${n("late")}</div></div>
@@ -421,6 +585,7 @@ const VIEWS = {
 
   async orders() {
     const [pos, runs] = await Promise.all([api("/api/purchase-orders"), api("/api/agents/runs")]);
+    window._pos = Object.fromEntries(pos.map((p) => [p.id, p]));
     const run = runs.find((r) => r.agent === "stock");
     if (!pos.length) return `<div class="section">${agentCard(run)}</div><div class="section panel empty">No supplier orders yet.</div>`;
     const dayOf = (iso, o = { weekday: "short", day: "numeric", month: "short" }) => new Date(iso.length === 10 ? iso + "T00:00" : iso + "Z").toLocaleDateString("en-GB", o);
@@ -466,9 +631,9 @@ const VIEWS = {
             return `<div class="ln"><span class="n">${esc(l.ingredient)}</span><span class="q"><b class="num">${fmt(r)}</b> of ${fmt(l.qty)} ${l.unit}${short ? ' <span class="chip low">Short</span>' : ""}</span></div>`; }).join("")
           : po.lines.map((l) => lineHtml(l, draft)).join("")}
         ${draft ? `<div class="row"><button class="brass approve">Approve and send</button><button class="reject">Reject</button></div>
-          <p class="after">${po.channel === "whatsapp" ? "After you approve, a Send on WhatsApp button appears with the order typed in for the supplier." : "After you approve, the order is emailed to the supplier."} It then waits here under <b>On the way</b> until you confirm the delivery.</p>` : ""}
+          <p class="after">When you approve, you choose to send it by email or on WhatsApp. It then waits here under <b>On the way</b> until you confirm the delivery.</p>` : ""}
         ${po.status === "sent" ? `<div class="sent-how">${po.channel === "whatsapp" ? "Order written for WhatsApp" : "Order emailed to the supplier"}${po.sent_at ? ` · ${dayOf(po.sent_at)}` : ""}</div>
-          <div class="btns">${po.whatsapp_link ? `<a class="wa" href="${esc(po.whatsapp_link)}" target="_blank" rel="noopener">${ICONS.whatsapp}Send on WhatsApp</a>` : ""}<button class="brass open-receive">Confirm delivery</button></div>
+          <div class="btns">${po.whatsapp_link ? `<a class="wa" href="${esc(po.whatsapp_link)}" target="_blank" rel="noopener" data-wa>${ICONS.whatsapp}Send on WhatsApp</a>` : ""}<button class="brass open-receive">Confirm delivery</button></div>
           <div class="receive-form" hidden>
             <p class="muted">Enter what really arrived. Change a number if the supplier sent less or more.</p>
             ${po.lines.map((l) => `<label class="rf-line"><span>${esc(l.ingredient)}</span><span class="q"><input class="qty num" type="number" min="0" step="any" value="${l.qty}" data-ing="${l.ingredient_id}" aria-label="Received ${esc(l.ingredient)}"><span class="u">${l.unit}</span></span></label>`).join("")}
@@ -533,13 +698,97 @@ const VIEWS = {
         <label class="field">Invoice number (optional)<input id="d-ref" type="text"></label>
         <button class="solid" id="d-save">Add to stock</button>
       </div></div>
-      <div class="section"><h2>POS daily report</h2><div class="panel form">
-        <div class="muted" style="font-size:14px">Upload the day's sales as CSV with columns <b>item,qty</b> if the POS is not connected.</div>
-        <label class="field">CSV file<input id="pos" type="file" accept=".csv,text/csv"></label>
-      </div></div>
       <div class="section"><h2>Messages to suppliers</h2><div class="panel">${mails.length ? mails.slice(0, 8).map((m) => `<div class="list-item"><span>${esc(m.subject)}<br><span class="muted">${esc(m.to)}</span></span><span class="chip ${m.status === "sent" ? "received" : m.status === "failed" ? "negative" : "draft"}">${m.status === "link" ? "WhatsApp" : m.status}</span></div>`).join("") : '<div class="muted">No emails yet.</div>'}</div></div>`;
   },
 };
+
+// ---- approve and send: choose email or WhatsApp, then watch it go -------------------------------------------
+const MAIL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/></svg>';
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function sendSheet(po, edits) {
+  const bg = document.createElement("div");
+  bg.className = "send-bg";
+  bg.innerHTML = `<div class="send-sheet" role="dialog" aria-modal="true" aria-labelledby="ss-title"><div class="grab"></div><div id="ss-body"></div></div>`;
+  document.body.append(bg);
+  const body = bg.querySelector("#ss-body");
+  const close = () => { bg.remove(); render(); };
+  let busy = false;
+  bg.addEventListener("click", (e) => { if (e.target === bg && !busy) bg.remove(); });
+  const items = po.lines.length, cost = po.lines.reduce((s, l) => s + l.est_cost, 0);
+  const options = [
+    { via: "email", icon: MAIL_ICON, label: "Email", detail: po.supplier_email ? `${po.supplier_email} · with your logo` : "No email address for this supplier", ok: !!po.supplier_email },
+    { via: "whatsapp", icon: ICONS.whatsapp, label: "WhatsApp", detail: po.supplier_whatsapp ? `+${po.supplier_whatsapp} · opens WhatsApp with the order typed in` : "No WhatsApp number for this supplier", ok: !!po.supplier_whatsapp },
+  ];
+  let pick = options.find((o) => o.via === po.channel && o.ok) || options.find((o) => o.ok);
+
+  const choose = () => {
+    body.innerHTML = `<h3 id="ss-title">Send order #${po.id} to ${esc(po.supplier)}</h3>
+      <div class="ss-sub">${items} ${items === 1 ? "item" : "items"} · est. ${sar(cost)} · approving sends it now</div>
+      ${options.map((o) => `<button type="button" class="ss-opt" data-via="${o.via}" aria-pressed="${o === pick}" ${o.ok ? "" : "disabled"}>
+        <span class="ic">${o.icon}</span><span><b>${o.label}</b><small>${esc(o.detail)}</small></span><span class="radio"></span></button>`).join("")}
+      <button type="button" class="ss-go" id="ss-go" ${pick ? "" : "disabled"}>${pick ? `Approve and send ${pick.via === "email" ? "by email" : "on WhatsApp"}` : "Add an email or WhatsApp number first"}</button>
+      <button type="button" class="ss-cancel" id="ss-cancel">Cancel</button>`;
+    body.querySelectorAll(".ss-opt").forEach((b) => (b.onclick = () => { pick = options.find((o) => o.via === b.dataset.via); choose(); }));
+    $("ss-cancel").onclick = () => bg.remove();
+    $("ss-go").onclick = () => (pick.via === "email" ? sendEmail() : sendWhatsApp());
+  };
+
+  const approve = (via) => api(`/api/purchase-orders/${po.id}/approve?via=${via}`, { method: "POST", body: JSON.stringify(edits) });
+
+  const sendWhatsApp = async () => {
+    busy = true;
+    try {
+      const r = await approve("whatsapp");
+      body.innerHTML = `<div class="ss-done"><span class="tick wa">${ICONS.whatsapp}</span><b>Order ready for WhatsApp</b>
+        <span>Order #${po.id} is approved. Open WhatsApp and press send in the chat with ${esc(po.supplier)}</span></div>
+        <div class="ss-row"><button type="button" class="ghost" id="ss-close">Close</button><a class="ss-go" id="ss-wa" href="${esc(r.whatsapp_link)}" target="_blank" rel="noopener">Open WhatsApp</a></div>`;
+      $("ss-wa").onclick = () => setTimeout(() => { $("ss-wa").textContent = "Opened in WhatsApp"; $("ss-wa").classList.add("opened"); }, 50);
+      $("ss-close").onclick = close;
+    } catch (e) { busy = false; toast(e.message, true); choose(); }
+  };
+
+  const sendEmail = async () => {
+    busy = true;
+    const server = status.mail_server ? (status.mail_server.includes("gmail") ? "Gmail" : status.mail_server) : null;
+    const steps = [
+      ["Order approved", `${items} ${items === 1 ? "item" : "items"} locked in`],
+      ["Email written", "Branded order with your logo and the item list"],
+      [server ? `Sending through ${server}` : "Sending", server ? `Connecting to ${status.mail_server}…` : "Handing the email to the app"],
+      ["Delivered", "Waiting for the mail server to accept it"],
+    ];
+    const draw = (at, pct) => {
+      body.innerHTML = `<h3 id="ss-title">Sending order #${po.id}</h3><div class="ss-sub">To ${esc(po.supplier)} by email</div>
+        <div class="ss-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
+        <div class="ss-steps">${steps.map(([t, d], i) => `<div class="ss-st ${i < at ? "done" : i === at ? "now" : "wait"}"><span class="dot">${i < at ? ICONS.check : ""}</span><span><b>${t}</b><small>${d}</small></span></div>`).join("")}</div>`;
+    };
+    draw(0, 8);
+    // the request does the real work; the steps advance while it runs and the last one shows what the server said
+    const req = approve("email").then((r) => ({ r }), (e) => ({ e }));
+    await wait(450); draw(1, 34);
+    await wait(550); draw(2, 62);
+    const [{ r, e }] = await Promise.all([req, wait(700)]);
+    if (e) { busy = false; toast(e.message, true); return choose(); }
+    draw(3, 90); await wait(350);
+    const m = r.email;
+    const at = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const view = m.id ? `<a class="ghost" href="/api/outbox/${m.id}/html" target="_blank" rel="noopener">See the email</a>` : "";
+    const done = (cls, icon, title, text) => {
+      body.innerHTML = `<div class="ss-done"><span class="tick ${cls}">${icon}</span><b>${title}</b><span>${text}</span></div>
+        <div class="ss-row">${view || '<span></span>'}<button type="button" class="ss-go" id="ss-close">Done</button></div>`;
+      $("ss-close").onclick = close;
+    };
+    if (m.status === "sent") done("", ICONS.check, "Email sent", `Order #${po.id} went to ${esc(m.to)} at ${at}.<br>It now waits under On the way until it arrives.`);
+    else if (m.status === "logged") done("warn", ICONS.bang, "Saved, not sent", `Email isn't set up on this server, so order #${po.id} was approved and saved, but nothing left the app. Set SMTP_HOST to send for real.`);
+    else done("bad", ICONS.bang, "Approved, but the email failed", `The mail server said: ${esc((m.error || "unknown error").slice(0, 160))}. The order is approved. Check the email settings, or call or message the supplier.`);
+  };
+  choose();
+}
+
+function bindPeople() {
+  document.querySelectorAll("[data-person]").forEach((b) => (b.onclick = () => { person = +b.dataset.person; go("person"); }));
+  document.querySelectorAll("[data-review]").forEach((b) => (b.onclick = () => { person = +b.dataset.review; go("review"); }));
+}
 
 function bindAgent() {
   const b = $("run-agent");
@@ -552,6 +801,47 @@ function bindAgent() {
 }
 
 const BIND = {
+  suppliers() {
+    document.querySelectorAll("[data-sup]").forEach((b) => (b.onclick = () => { supplier = b.dataset.sup === "new" ? "new" : +b.dataset.sup; go("supplier"); }));
+  },
+  supplier() {
+    document.querySelectorAll("[data-ch]").forEach((b) => (b.onclick = () => {
+      window._supCh = b.dataset.ch;
+      document.querySelectorAll("[data-ch]").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    }));
+    $("su-save").onclick = async () => {
+      const body = { name: $("su-name").value.trim(), channel: window._supCh, email: $("su-email").value.trim() || null,
+        phone: $("su-phone").value.trim() || null, lead_days: +$("su-lead").value || 0,
+        ingredient_ids: [...document.querySelectorAll(".checks input:checked")].map((c) => +c.value) };
+      if (!body.name) return toast("Write the supplier's name", true);
+      try {
+        await api(supplier === "new" ? "/api/suppliers" : `/api/suppliers/${supplier}`, { method: supplier === "new" ? "POST" : "PUT", body: JSON.stringify(body) });
+        toast(`${body.name} saved`); supplier = null; go("suppliers");
+      } catch (e) { toast(e.message, true); }
+    };
+    const rm = $("su-rm");
+    if (rm) rm.onclick = async () => {
+      if (!confirm("Remove this supplier?")) return;
+      try { await api(`/api/suppliers/${supplier}`, { method: "DELETE" }); toast("Supplier removed"); supplier = null; go("suppliers"); }
+      catch (e) { toast(e.message, true); }
+    };
+  },
+
+  person() { bindPeople(); },
+  review() {
+    document.querySelectorAll("[data-rate]").forEach((b) => (b.onclick = () => {
+      window._rv[b.dataset.rate] = +b.dataset.v;
+      document.querySelectorAll(`[data-rate="${b.dataset.rate}"]`).forEach((x) => x.setAttribute("aria-pressed", x === b));
+    }));
+    $("rv-save").onclick = async () => {
+      const missing = REVIEW.filter(([k]) => !window._rv[k]).map(([, t]) => t.toLowerCase());
+      if (missing.length) return toast(`Pick a rating for ${missing.join(", ")}`, true);
+      try {
+        await api(`/api/staff/${person}/review`, { method: "POST", body: JSON.stringify({ ...window._rv, note: $("rv-note").value.trim() || null }) });
+        toast("Review saved"); go("staff");
+      } catch (e) { toast(e.message, true); }
+    };
+  },
   evaluation() {
     clearTimeout(evalPoll);
     document.querySelectorAll("[data-store]").forEach((b) => (b.onclick = () => {
@@ -586,6 +876,13 @@ const BIND = {
     document.querySelectorAll("[data-revoke]").forEach((b) => (b.onclick = async () => { await api(`/api/devices/${b.dataset.revoke}/revoke`, { method: "POST" }); toast("Device removed"); render(); }));
   },
   staff() {
+    bindPeople();
+    const rs = $("run-staff");
+    rs.onclick = async () => {
+      rs.disabled = true; rs.textContent = "Checking the week…";
+      try { const r = await api("/api/agents/staff/run", { method: "POST" }); toast(r.headline); render(); }
+      catch (e) { toast(e.message, true); rs.disabled = false; rs.textContent = "Run staff check now"; }
+    };
     const w = window._st;
     Charts.bars($("c-hours"), w.staff.map((m) => ({ value: m.hours_7d, label: m.name, tip: `${esc(m.name)}<br><b>${m.hours_7d} h</b> · late ${m.late_7d}×` })), { unit: " h" });
     $("s-save").onclick = async () => {
@@ -687,13 +984,14 @@ const BIND = {
     }));
     document.querySelectorAll(".po").forEach((el) => {
       const id = el.dataset.id;
-      el.querySelector(".approve:not(.receive)")?.addEventListener("click", async (ev) => {
-        ev.target.disabled = true;
+      el.querySelector(".approve:not(.receive)")?.addEventListener("click", () => {
         const edits = [...el.querySelectorAll("input.qty")].map((i) => ({ line_id: +i.dataset.line, qty: parseFloat(i.value) || 0 }));
-        try { const r = await api(`/api/purchase-orders/${id}/approve`, { method: "POST", body: JSON.stringify(edits) });
-          if (r.whatsapp_link) { toast("Approved. Tap Send on WhatsApp to message the supplier."); render(); return; }
-          toast(r.email.status === "sent" ? `Sent to ${r.email.to}` : r.email.status === "logged" ? "Approved. Email logged (no mail server set)" : `Approved, but email failed: ${r.email.error}`, r.email.status === "failed"); render(); }
-        catch (e) { toast(e.message, true); ev.target.disabled = false; }
+        sendSheet(window._pos[id], edits);
+      });
+      // WhatsApp keeps an unsent draft in the chat, so a second tap would add the order again after the first
+      el.querySelector("[data-wa]")?.addEventListener("click", (ev) => {
+        const a = ev.currentTarget;
+        setTimeout(() => { a.innerHTML = `${ICONS.check}Opened in WhatsApp`; a.classList.add("opened"); a.title = "Tap again only if you cleared the old draft in the chat"; }, 50);
       });
       el.querySelector(".reject")?.addEventListener("click", async () => { await api(`/api/purchase-orders/${id}/reject`, { method: "POST" }); toast("Order rejected"); render(); });
       const form = el.querySelector(".receive-form");
@@ -715,11 +1013,6 @@ const BIND = {
       if (!(qty > 0)) return toast("Enter the quantity received", true);
       await api("/api/deliveries", { method: "POST", body: JSON.stringify({ lines: [{ ingredient_id: +$("d-ing").value, qty }], invoice_ref: $("d-ref").value || null }) });
       toast("Added to stock"); render();
-    };
-    $("pos").onchange = async (e) => {
-      const fd = new FormData(); fd.append("file", e.target.files[0]);
-      try { const r = await api("/api/sales/import", { method: "POST", body: fd }); toast(`Imported ${r.lines} lines · ${sar(r.total)}`); }
-      catch (err) { toast(err.message, true); }
     };
     $("inv").onchange = async (e) => {
       const out = $("inv-out");

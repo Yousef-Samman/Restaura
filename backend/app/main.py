@@ -3,8 +3,8 @@ import json
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -12,13 +12,14 @@ from sqlalchemy.orm import Session, object_session, selectinload
 
 from . import auth, evaluation, finance, forecast, mailer, routines, sales_report, staff as staffing, stock
 from . import nightly
-from .agents import cashier, invoice, overview, stock_agent
+from .email_template import HEADER_CID, order_email_html
+from .agents import cashier, invoice, overview, staff_agent, stock_agent
 from .agents.stock_agent import split_change
 from .agents.llm import LLM
 from .config import Settings, get_settings
 from .db import Base, make_engine, make_sessionmaker
 from .models import (AgentRun, Device, Expense, RoutineTask, Shift, StaffMember, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
-                     PurchaseOrderLine, RecipeLine, StockMove, SuggestionEvent)
+                     PurchaseOrderLine, RecipeLine, StaffReview, StaffTip, StockMove, Supplier, SuggestionEvent)
 from .seed import STORE_UTC_OFFSET, seed
 
 STATIC = Path(__file__).parent / "static"
@@ -32,6 +33,27 @@ class CartLine(BaseModel):
 
 class Cart(BaseModel):
     lines: list[CartLine]
+    # how the sale went, for the staff coach: seconds from the first item to payment, items taken off, how they paid
+    seconds_to_pay: int | None = Field(None, ge=0, le=3600)
+    removed_items: int = Field(0, ge=0, le=100)
+    payment: str | None = Field(None, pattern="^(card|cash|split)$")
+
+
+class SupplierIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    channel: str = Field("email", pattern="^(email|whatsapp)$")
+    email: str | None = Field(None, max_length=200, pattern=r"^$|^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    phone: str | None = Field(None, max_length=20)
+    lead_days: int = Field(1, ge=0, le=30)
+    ingredient_ids: list[int] = []
+
+
+class ReviewIn(BaseModel):
+    quality: int = Field(ge=1, le=5)
+    speed: int = Field(ge=1, le=5)
+    cleanliness: int = Field(ge=1, le=5)
+    teamwork: int = Field(ge=1, le=5)
+    note: str | None = Field(None, max_length=200)
 
 
 class ReceiveLine(BaseModel):
@@ -137,6 +159,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     staff = require("cashier", "manager")
     manager_only = require("manager")
+
+    def staff_id(user) -> int | None:
+        """The staff member behind a cashier account (staff accounts are named staff-<id>)."""
+        name = user.username or ""
+        return int(name[6:]) if name.startswith("staff-") and name[6:].isdigit() else None
     cookie = dict(httponly=True, samesite="lax", secure=settings.secure_cookies)
 
     # ---- accounts and devices --------------------------------------------------
@@ -213,7 +240,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/status")
     def status():
         return {"store": settings.store_name, "ai_enabled": llm.enabled, "model": settings.model if llm.enabled else None,
-                "email": "smtp" if settings.smtp_host else "log only"}
+                "email": "smtp" if settings.smtp_host else "log only", "mail_server": settings.smtp_host}
 
     # ---- cashier -----------------------------------------------------------
     @app.get("/api/menu")
@@ -232,12 +259,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         d = dt.date.today()
         orders, sales = db.execute(select(func.count(Order.id), func.coalesce(func.sum(Order.total), 0))
                                    .where(Order.business_date == d, Order.source != "history")).one()
-        start = dt.datetime.combine(d, dt.time())
+        # timestamps are stored in UTC, so the store's day starts at local midnight minus the offset
+        start = dt.datetime.combine(d, dt.time()) - STORE_UTC_OFFSET
         shown = db.scalar(select(func.count(SuggestionEvent.id)).where(SuggestionEvent.created_at >= start)) or 0
-        accepted = db.scalar(select(func.count(SuggestionEvent.id))
-                             .where(SuggestionEvent.created_at >= start, SuggestionEvent.accepted)) or 0
-        addon_sales = db.scalar(select(func.coalesce(func.sum(OrderLine.price * OrderLine.qty), 0)).join(Order)
-                                .where(Order.business_date == d, OrderLine.from_suggestion)) or 0
+        # count and value come from the same sold lines, so they always agree
+        accepted, addon_sales = db.execute(select(func.coalesce(func.sum(OrderLine.qty), 0),
+                                                  func.coalesce(func.sum(OrderLine.price * OrderLine.qty), 0)).join(Order)
+                                           .where(Order.business_date == d, OrderLine.from_suggestion)).one()
         report = stock.stock_report(db)
         return {"date": d.isoformat(), "orders": orders, "sales": round(sales, 2),
                 "avg_ticket": round(sales / orders, 2) if orders else 0,
@@ -250,11 +278,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                       for po in db.scalars(select(PurchaseOrder).where(PurchaseOrder.status == "draft")))}
 
     @app.post("/api/cashier/suggest")
-    def suggest(cart: Cart, db: Session = Depends(get_db), _=Depends(staff)):
-        return cashier.suggest(db, llm, load_cart(db, cart.lines))
+    def suggest(cart: Cart, db: Session = Depends(get_db), user=Depends(staff)):
+        return cashier.suggest(db, llm, load_cart(db, cart.lines), staff_id=staff_id(user))
 
     @app.post("/api/orders")
-    def place_order(cart: Cart, db: Session = Depends(get_db), _=Depends(staff)):
+    def place_order(cart: Cart, db: Session = Depends(get_db), user=Depends(staff)):
         if not cart.lines:
             raise HTTPException(400, "Order is empty")
         items = load_cart(db, cart.lines)
@@ -265,7 +293,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         short = [db.get(Ingredient, i).name for i, q in use.items() if db.get(Ingredient, i).on_hand < q]
         if short:
             raise HTTPException(409, f"Not enough stock for this order: {', '.join(short)}")
-        order = Order(business_date=dt.date.today(), source="cashier", total=sum(i.price * q for i, q in items))
+        order = Order(business_date=dt.date.today(), source="cashier", total=sum(i.price * q for i, q in items),
+                      staff_id=staff_id(user), seconds_to_pay=cart.seconds_to_pay, removed_items=cart.removed_items,
+                      payment=cart.payment)
         order.lines = [OrderLine(menu_item_id=i.id, qty=q, price=i.price, from_suggestion=l.suggestion_event_id is not None)
                        for (i, q), l in zip(items, cart.lines)]
         db.add(order)
@@ -349,6 +379,67 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/staff/week")
     def staff_week(db: Session = Depends(get_db), _=Depends(manager_only)):
         return staffing.week(db)
+
+    # ---- the staff coach: weekly measures, the manager's weekly review and one tip per person ----------
+    @app.get("/api/staff/coach")
+    def staff_coach(db: Session = Depends(get_db), _=Depends(manager_only)):
+        last = db.scalar(select(AgentRun).where(AgentRun.agent == "staff").order_by(AgentRun.id.desc()))
+        return staff_agent.overview(db) | {
+            "last_run": {"at": last.created_at.isoformat() + "Z", "source": last.source,
+                         "headline": json.loads(last.summary)["headline"]} if last else None}
+
+    @app.get("/api/staff/{member_id}/coach")
+    def staff_coach_person(member_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
+        p = next((p for p in staff_agent.overview(db)["people"] if p["id"] == member_id), None)
+        if not p:
+            raise HTTPException(404, "Staff member not found")
+        tips = db.scalars(select(StaffTip).where(StaffTip.staff_id == member_id).order_by(StaffTip.id.desc()).limit(6))
+        reviews = db.scalars(select(StaffReview).where(StaffReview.staff_id == member_id)
+                             .order_by(StaffReview.week_start.desc()).limit(6))
+        return p | {
+            "tips": [{"tip": t.tip, "why": t.why, "label": staff_agent.FOCUS[t.focus][0], "at": t.created_at.isoformat() + "Z",
+                      "seen": t.seen_at is not None, "result": staff_agent.tip_result(db, t)} for t in tips],
+            "reviews": [{"week_start": r.week_start.isoformat(), "quality": r.quality, "speed": r.speed,
+                         "cleanliness": r.cleanliness, "teamwork": r.teamwork, "note": r.note} for r in reviews]}
+
+    @app.post("/api/staff/{member_id}/review")
+    def save_review(member_id: int, body: ReviewIn, db: Session = Depends(get_db), _=Depends(manager_only)):
+        """The manager's review for this week. Saving again in the same week replaces it."""
+        if not db.get(StaffMember, member_id):
+            raise HTTPException(404, "Staff member not found")
+        week = staff_agent.week_start(routines.local_now().date())
+        r = db.scalar(select(StaffReview).where(StaffReview.staff_id == member_id, StaffReview.week_start == week))
+        if not r:
+            r = StaffReview(staff_id=member_id, week_start=week)
+            db.add(r)
+        r.quality, r.speed, r.cleanliness, r.teamwork = body.quality, body.speed, body.cleanliness, body.teamwork
+        r.note = (body.note or "").strip() or None
+        db.commit()
+        return {"saved": True, "week_start": week.isoformat()}
+
+    @app.post("/api/agents/staff/run")
+    def run_staff_agent(db: Session = Depends(get_db), _=Depends(manager_only)):
+        return staff_agent.run(db, llm)
+
+    @app.get("/api/me/tip")
+    def my_tip(db: Session = Depends(get_db), user=Depends(staff)):
+        """The latest tip for the signed-in staff member, shown once after the PIN until they tap Got it."""
+        sid = staff_id(user)
+        t = sid and db.scalar(select(StaffTip).where(StaffTip.staff_id == sid).order_by(StaffTip.id.desc()))
+        if not t or t.seen_at:
+            return {"tip": None}
+        prev = db.scalar(select(StaffTip).where(StaffTip.staff_id == sid, StaffTip.id < t.id).order_by(StaffTip.id.desc()))
+        return {"tip": {"id": t.id, "tip": t.tip, "why": t.why, "label": staff_agent.FOCUS[t.focus][0]},
+                "previous": {"label": staff_agent.FOCUS[prev.focus][0], "result": staff_agent.tip_result(db, prev)} if prev else None}
+
+    @app.post("/api/me/tip/{tip_id}/seen")
+    def tip_seen(tip_id: int, db: Session = Depends(get_db), user=Depends(staff)):
+        t = db.get(StaffTip, tip_id)
+        if not t or t.staff_id != staff_id(user):
+            raise HTTPException(404, "Tip not found")
+        t.seen_at = dt.datetime.now(dt.UTC).replace(tzinfo=None)
+        db.commit()
+        return {"ok": True}
 
     @app.post("/api/staff")
     def add_staff(body: StaffIn, db: Session = Depends(get_db), _=Depends(manager_only)):
@@ -461,18 +552,97 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return [{"id": r.id, "at": r.created_at.isoformat(), "agent": r.agent, "source": r.source,
                  **json.loads(r.summary)} for r in runs]
 
+    # ---- suppliers ------------------------------------------------------------------
+    def supplier_dict(sup: Supplier) -> dict:
+        db_ings = object_session(sup).scalars(select(Ingredient).where(Ingredient.supplier_id == sup.id).order_by(Ingredient.name))
+        return {"id": sup.id, "name": sup.name, "channel": sup.channel, "email": sup.email, "phone": sup.phone,
+                "lead_days": sup.lead_days, "ingredients": [{"id": i.id, "name": i.name} for i in db_ings]}
+
+    @app.get("/api/suppliers")
+    def suppliers(db: Session = Depends(get_db), _=Depends(manager_only)):
+        return {"suppliers": [supplier_dict(x) for x in db.scalars(select(Supplier).where(Supplier.active).order_by(Supplier.name))],
+                "ingredients": [{"id": i.id, "name": i.name, "supplier_id": i.supplier_id}
+                                for i in db.scalars(select(Ingredient).order_by(Ingredient.name))]}
+
+    def save_supplier(db: Session, sup: Supplier, body: SupplierIn) -> dict:
+        email = (body.email or "").strip() or None
+        phone = "".join(ch for ch in (body.phone or "") if ch.isdigit()) or None
+        if body.channel == "email" and not email:
+            raise HTTPException(400, "Add the email address orders go to")
+        if body.channel == "whatsapp" and not phone:
+            raise HTTPException(400, "Add the WhatsApp number orders go to")
+        clash = db.scalar(select(Supplier).where(func.lower(Supplier.name) == body.name.strip().lower(), Supplier.id != (sup.id or 0), Supplier.active))
+        if clash:
+            raise HTTPException(409, "A supplier with this name already exists")
+        sup.name, sup.channel, sup.email, sup.phone, sup.lead_days = body.name.strip(), body.channel, email, phone, body.lead_days
+        if not sup.id:
+            db.add(sup)
+            db.flush()
+        mine = set(body.ingredient_ids)
+        for ing in db.scalars(select(Ingredient)):
+            if ing.id in mine:
+                ing.supplier_id = sup.id  # each ingredient has one supplier: ticking it here moves it
+            elif ing.supplier_id == sup.id:
+                raise HTTPException(400, f"{ing.name} needs a supplier. Tick it on another supplier to move it there.")
+        db.commit()
+        return supplier_dict(sup)
+
+    @app.post("/api/suppliers")
+    def add_supplier(body: SupplierIn, db: Session = Depends(get_db), _=Depends(manager_only)):
+        return save_supplier(db, Supplier(), body)
+
+    @app.put("/api/suppliers/{supplier_id}")
+    def edit_supplier(supplier_id: int, body: SupplierIn, db: Session = Depends(get_db), _=Depends(manager_only)):
+        sup = db.get(Supplier, supplier_id)
+        if not sup:
+            raise HTTPException(404, "Supplier not found")
+        return save_supplier(db, sup, body)
+
+    @app.delete("/api/suppliers/{supplier_id}")
+    def remove_supplier(supplier_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
+        sup = db.get(Supplier, supplier_id)
+        if not sup:
+            raise HTTPException(404, "Supplier not found")
+        if db.scalar(select(func.count(PurchaseOrder.id)).where(PurchaseOrder.supplier_id == sup.id, PurchaseOrder.status == "sent")):
+            raise HTTPException(409, "An order from this supplier is on the way. Receive it first.")
+        if db.scalar(select(func.count(Ingredient.id)).where(Ingredient.supplier_id == sup.id)):
+            raise HTTPException(409, "Move this supplier's ingredients to another supplier first.")
+        for po in db.scalars(select(PurchaseOrder).where(PurchaseOrder.supplier_id == sup.id, PurchaseOrder.status == "draft")):
+            po.status = "rejected"
+        # past orders keep pointing at the supplier, so one with history is hidden instead of deleted
+        if db.scalar(select(func.count(PurchaseOrder.id)).where(PurchaseOrder.supplier_id == sup.id)):
+            sup.active = False
+            sup.name = f"{sup.name} (removed {sup.id})"  # frees the name for a new supplier
+        else:
+            db.delete(sup)
+        db.commit()
+        return {"removed": supplier_id}
+
     # ---- purchase orders -------------------------------------------------------
     def order_text(po: PurchaseOrder) -> str:
         return "\n".join([f"Hello {po.supplier.name},", "", f"Please deliver the following to {settings.store_name}:", ""]
                          + [f"- {l.ingredient.name}: {l.qty:g} {l.ingredient.unit}" for l in po.lines]
                          + ["", f"Purchase order #{po.id}. Thank you.", settings.store_name])
 
+    def whatsapp_number(po: PurchaseOrder) -> str | None:
+        return settings.demo_supplier_whatsapp or po.supplier.phone or None
+
+    def via(po: PurchaseOrder) -> str:
+        return po.sent_via or po.supplier.channel
+
     def whatsapp_link(po: PurchaseOrder) -> str | None:
         """Click-to-chat link with the order typed in; the manager presses send in WhatsApp."""
-        number = settings.demo_supplier_whatsapp or po.supplier.phone
-        if po.supplier.channel != "whatsapp" or not number:
+        number = whatsapp_number(po)
+        if via(po) != "whatsapp" or not number:
             return None
         return f"https://wa.me/{''.join(c for c in number if c.isdigit())}?text={quote(order_text(po))}"
+
+    def order_html(po: PurchaseOrder) -> str:
+        sent = po.sent_at or dt.datetime.now(dt.UTC).replace(tzinfo=None)
+        deliver_by = (sent + dt.timedelta(days=po.supplier.lead_days)).date()
+        return order_email_html(store=settings.store_name, supplier=po.supplier.name, po_id=po.id,
+                                lines=[(l.ingredient.name, l.qty, l.ingredient.unit) for l in po.lines],
+                                deliver_by=deliver_by, sent_at=sent + STORE_UTC_OFFSET)
 
     def po_ref(po: PurchaseOrder) -> str:
         return f"PO {po.id}"
@@ -494,7 +664,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         expected = (po.sent_at + dt.timedelta(days=po.supplier.lead_days)).date().isoformat() if po.sent_at else None
         return {"id": po.id, "supplier": po.supplier.name, "status": po.status, "note": po.note,
                 "expected": expected, "delivery": po_delivery(po),
-                "channel": po.supplier.channel, "whatsapp_link": whatsapp_link(po) if po.status == "sent" else None,
+                "channel": via(po), "supplier_email": settings.demo_supplier_email or po.supplier.email, "supplier_whatsapp": whatsapp_number(po),
+                "whatsapp_link": whatsapp_link(po) if po.status == "sent" else None,
                 "created_at": po.created_at.isoformat(), "sent_at": po.sent_at.isoformat() if po.sent_at else None,
                 "lead_days": po.supplier.lead_days, "changed": any(split_change(l.reason)[1] for l in po.lines),
                 "lines": [{"id": l.id, "ingredient_id": l.ingredient_id, "ingredient": l.ingredient.name,
@@ -513,10 +684,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return [po_dict(po) for po in db.scalars(select(PurchaseOrder).order_by(PurchaseOrder.id.desc()))]
 
     @app.post("/api/purchase-orders/{po_id}/approve")
-    def approve(po_id: int, edits: list[EditLine] | None = None, db: Session = Depends(get_db), _=Depends(manager_only)):
+    def approve(po_id: int, edits: list[EditLine] | None = None, via_: str | None = Query(None, alias="via", pattern="^(email|whatsapp)$"),
+                db: Session = Depends(get_db), _=Depends(manager_only)):
+        """Approve a draft and send it the way the manager picked (email or WhatsApp); without a pick, the
+        supplier's usual way."""
         po = get_po(db, po_id)
         if po.status != "draft":
             raise HTTPException(409, f"Order is already {po.status}")
+        channel = via_ or po.supplier.channel
+        if channel == "whatsapp" and not whatsapp_number(po):
+            raise HTTPException(400, f"{po.supplier.name} has no WhatsApp number. Add one under More › Suppliers, or send by email.")
+        if channel == "email" and not (settings.demo_supplier_email or po.supplier.email):
+            raise HTTPException(400, f"{po.supplier.name} has no email address. Add one under More › Suppliers, or send on WhatsApp.")
         for e in edits or []:
             line = db.get(PurchaseOrderLine, e.line_id)
             if not line or line.purchase_order_id != po.id:
@@ -529,15 +708,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db.refresh(po)
         if not po.lines:
             raise HTTPException(400, "Order has no lines left")
-        po.status, po.sent_at = "sent", dt.datetime.now(dt.UTC).replace(tzinfo=None)
-        if po.supplier.channel == "whatsapp":
-            to = settings.demo_supplier_whatsapp or po.supplier.phone or ""
+        po.status, po.sent_at, po.sent_via = "sent", dt.datetime.now(dt.UTC).replace(tzinfo=None), channel
+        if channel == "whatsapp":
+            to = whatsapp_number(po) or ""
             db.add(Outbox(to=f"WhatsApp +{to}", subject=f"Purchase order #{po.id} from {settings.store_name}", body=order_text(po), status="link"))
             db.commit()
             return po_dict(po) | {"email": None}
-        mail = mailer.send(db, settings, po.supplier.email or "", f"Purchase order #{po.id} from {settings.store_name}", order_text(po))
+        mail = mailer.send(db, settings, po.supplier.email or "", f"Purchase order #{po.id} from {settings.store_name}",
+                           order_text(po), order_html(po))
         db.commit()
-        return po_dict(po) | {"email": {"to": mail.to, "status": mail.status, "error": mail.error}}
+        return po_dict(po) | {"email": {"id": mail.id, "to": mail.to, "status": mail.status, "error": mail.error}}
 
     @app.post("/api/purchase-orders/{po_id}/reject")
     def reject(po_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
@@ -580,6 +760,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if out is None:
             raise HTTPException(502, "The invoice could not be read. Enter the delivery manually instead.")
         return out
+
+    @app.get("/api/outbox/{mail_id}/html", response_class=HTMLResponse)
+    def outbox_html(mail_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
+        """The branded email as the supplier sees it, with the inline logo pointed at the app's copy."""
+        mail = db.get(Outbox, mail_id)
+        if not mail or not mail.html:
+            raise HTTPException(404, "No branded version of this email")
+        return mail.html.replace(f"cid:{HEADER_CID}", "/static/email-header.png")
 
     @app.get("/api/outbox")
     def outbox(db: Session = Depends(get_db), _=Depends(manager_only)):
