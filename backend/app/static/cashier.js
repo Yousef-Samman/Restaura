@@ -95,7 +95,7 @@ function renderCart() {
     $("next").onclick = () => { state.paid = null; go("order"); };
   } else if (state.step === "order") {
     pane.innerHTML = state.cart.length ? `<ul class="lines">${linesHtml()}</ul>` : `<div class="empty-order">${ICONS.bag}<div>Tap an item to start an order</div></div>`;
-    acts.innerHTML = `<button class="btn ghost" id="clear">Clear</button><button class="btn solid" id="next" ${state.cart.length ? "" : "disabled"}>${ICONS.spark}Continue to AI suggestions</button>`;
+    acts.innerHTML = `<button class="btn ghost" id="clear">Clear</button><button class="btn solid" id="next" ${state.cart.length ? "" : "disabled"}>Next: AI suggestions</button>`;
     $("clear").onclick = () => { state.cart = []; state.suggest = null; renderCart(); };
     $("next").onclick = () => go("suggest");
   } else if (state.step === "suggest") {
