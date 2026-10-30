@@ -33,11 +33,13 @@ def test_cashier_suggests_available_items_not_in_cart(client):
 
 def test_accepted_suggestion_is_tracked(client):
     crepe = item_id(client, "Hazelnut crepe")
+    before = client.get("/api/insights/cashier").json()
     s = client.post("/api/cashier/suggest", json={"lines": [{"item_id": crepe}]}).json()["suggestions"][0]
     client.post("/api/orders", json={"lines": [{"item_id": crepe},
                                                {"item_id": s["item_id"], "suggestion_event_id": s["event_id"]}]})
     ins = client.get("/api/insights/cashier").json()
-    assert ins["accepted"] == 1 and ins["added_revenue"] == s["price"]
+    assert ins["accepted"] == before["accepted"] + 1
+    assert ins["added_revenue"] == round(before["added_revenue"] + s["price"], 2)
 
 
 def test_out_of_stock_item_is_hidden_and_refused(client):
@@ -79,6 +81,10 @@ def test_full_stock_to_order_loop(client):
                 json={"lines": [{"ingredient_id": line["ingredient_id"], "qty": line["qty"]}], "invoice_ref": "INV-1"})
     assert ingredient(client, "Pistachio cream")["on_hand"] == before + line["qty"]
     assert ingredient(client, "Pistachio cream")["status"] == "ok"
+    done = next(p for p in client.get("/api/purchase-orders").json() if p["id"] == pantry["id"])
+    assert done["status"] == "received" and done["expected"] and done["delivery"]["at"]
+    assert done["delivery"]["lines"] == [{"ingredient_id": line["ingredient_id"], "ingredient": "Pistachio cream",
+                                          "unit": line["unit"], "qty": line["qty"]}]
 
 
 def test_manager_can_edit_quantities_before_approving(client):
@@ -122,6 +128,7 @@ def test_sales_summary(client):
     assert len(s["daily"]) == 14 and s["daily"][-1]["sales"] >= 42
     assert s["top_items"] and s["categories"]
     assert len(s["today_orders"]) == 1
+    assert len(s["period_orders"]) > 14  # sample history has times of day, for the hourly chart
 
 
 def test_whatsapp_supplier_gets_click_to_chat_link(client):

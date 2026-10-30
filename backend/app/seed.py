@@ -5,7 +5,7 @@ import random
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Attendance, Expense, Ingredient, RoutineCheck, RoutineTask, Shift, StaffMember, MenuItem, Order, OrderLine, RecipeLine, StockMove, Supplier
+from .models import Attendance, Expense, Ingredient, RoutineCheck, RoutineTask, Shift, StaffMember, MenuItem, Order, OrderLine, RecipeLine, StockMove, SuggestionEvent, Supplier
 
 SUPPLIERS = [
     ("Fresh Produce Co.", "orders@fresh-produce.example", 1),  # orders go by WhatsApp, see WHATSAPP below
@@ -97,6 +97,7 @@ def _seed_history(db: Session, items: list[MenuItem], days: int) -> None:
     drinks = [i for i in items if i.category == "Drinks"]
     addons = [i for i in items if i.is_addon]
     today = dt.date.today()
+    orders = []
     for d in range(days, 0, -1):
         day = today - dt.timedelta(days=d)
         for _ in range(rng.randint(35, 55)):
@@ -108,6 +109,32 @@ def _seed_history(db: Session, items: list[MenuItem], days: int) -> None:
             order = Order(business_date=day, source="history", total=sum(i.price for i in lines))
             order.lines = [OrderLine(menu_item_id=i.id, qty=1, price=i.price) for i in lines]
             db.add(order)
+            orders.append(order)
+    _seed_times_and_helper(db, orders, addons)
+
+
+# busier in the afternoon and evening; store time is UTC+3 (Saudi Arabia), timestamps are stored in UTC
+HOUR_WEIGHTS = {10: 2, 11: 3, 12: 4, 13: 5, 14: 5, 15: 6, 16: 8, 17: 9, 18: 10, 19: 11, 20: 12, 21: 11, 22: 8, 23: 5}
+STORE_UTC_OFFSET = dt.timedelta(hours=3)
+
+
+def _seed_times_and_helper(db: Session, orders: list[Order], addons: list[MenuItem]) -> None:
+    """Sample order times, and sample cashier-helper history: which add-ons were suggested and which
+    were added because of a suggestion. A separate random stream keeps the orders themselves unchanged."""
+    rng = random.Random(19)
+    db.flush()
+    hours, weights = list(HOUR_WEIGHTS), list(HOUR_WEIGHTS.values())
+    addon_ids = {a.id for a in addons}
+    for order in orders:
+        local = dt.datetime.combine(order.business_date, dt.time(rng.choices(hours, weights)[0], rng.randrange(60)))
+        order.created_at = local - STORE_UTC_OFFSET
+        added = next((l for l in order.lines if l.menu_item_id in addon_ids), None)
+        if added and rng.random() < 0.6:
+            added.from_suggestion = True
+            db.add(SuggestionEvent(created_at=order.created_at, menu_item_id=added.menu_item_id, source="rules",
+                                   accepted=True, order_id=order.id))
+        elif rng.random() < 0.7:
+            db.add(SuggestionEvent(created_at=order.created_at, menu_item_id=rng.choice(addons).id, source="rules"))
 
 
 # sample monthly costs and one-off payments (SAR); illustrative only

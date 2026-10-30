@@ -46,7 +46,7 @@ function toast(msg, err = false) {
 async function renderTabs() {
   const today = await api("/api/today").catch(() => ({}));
   const active = MORE.some((m) => m.id === tab) ? "more" : SUB.find((x) => x.id === tab)?.back || tab;
-  $("tabs").innerHTML = TABS.map((t) => `<button data-tab="${t.id}" ${t.id === active ? 'aria-current="page"' : ""}>${ICONS[t.icon]}${t.label}
+  $("tabs").innerHTML = TABS.map((t) => `<button data-tab="${t.id}" ${t.id === active ? 'aria-current="page"' : ""}><span class="ti">${ICONS[t.icon]}</span>${t.label}
     ${t.id === "orders" && today.changed_drafts ? `<span class="dot warn" aria-label="An order needs a look">!</span>` : t.id === "orders" && today.drafts ? `<span class="dot">${today.drafts}</span>` : ""}${t.id === "stock" && today.low_stock ? `<span class="dot">${today.low_stock}</span>` : ""}</button>`).join("");
   $("tabs").querySelectorAll("button").forEach((b) => (b.onclick = () => go(b.dataset.tab)));
 }
@@ -66,6 +66,7 @@ async function render() {
   catch (e) { view.innerHTML = `<div class="panel section">${esc(e.message)}</div>`; }
 }
 
+const byWhom = (run) => (run.source === "ai" ? "by Claude" : "by the built-in rules");
 const timeOf = (iso) => new Date(iso + "Z").toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit" });
 
 // A draft order the stock agent changed: shown orange on Today so the manager looks at this one first.
@@ -84,7 +85,7 @@ function orderTab(po) {
 function agentCard(run, drafts = []) {
   const steps = run?.steps?.length || 0;
   return `<div class="agent">
-    <div class="agent-h"><span class="badge">${ICONS.agent}</span><div><b>Stock agent</b><small>${run ? `Finished ${timeOf(run.at)} · ${steps} steps · ${run.source === "ai" ? "by Claude" : "rules mode"}` : "Not run yet"}</small></div></div>
+    <div class="agent-h"><span class="badge">${ICONS.stockAgent}</span><div><b>Stock agent</b><small>${run ? `Finished ${timeOf(run.at)} · ${steps} steps · ${byWhom(run)}` : "Not run yet"}</small></div></div>
     <p class="big">${run ? esc(run.headline) : "No stock check yet today. Run one after closing, or any time."}</p>
     ${drafts.filter((p) => p.changed).map(orderTab).join("")}
     ${(run?.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
@@ -110,6 +111,45 @@ function evCashier(c) {
     ? `${d.cases} held-out cases from a store whose customers pair items in their own way. The helper learns this from the orders.`
     : `${d.cases} cases. The demo data pairs items almost at random, so best sellers are already close to the best possible answer.`;
   return { lift, body: `${evBars(d.rows)}<p class="ev-note">${note}</p>` };
+}
+
+// stock tab: filters and a compact list; a row opens to show the details and the count box
+let stockFilter = "need", stockQuery = "", stockOpen = null;
+const STOCK_FILTERS = {
+  need: { label: "Needs action", test: (r) => r.status === "negative" || (r.status === "low" && !r.on_order) },
+  coming: { label: "On order", test: (r) => r.on_order },
+  ok: { label: "OK", test: (r) => r.status === "ok" && !r.on_order },
+  all: { label: "All", test: () => true },
+};
+const STOCK_WORD = { negative: "Below zero", low: "Low", ok: "OK" };
+
+function stockList() {
+  const q = stockQuery.trim().toLowerCase();
+  const rank = (r) => (r.status === "negative" ? 0 : r.status === "low" ? (r.on_order ? 2 : 1) : 3);
+  const rows = window._stk.filter(STOCK_FILTERS[stockFilter].test).filter((r) => !q || r.name.toLowerCase().includes(q))
+    .sort((a, b) => rank(a) - rank(b) || (a.days_left ?? 999) - (b.days_left ?? 999) || a.name.localeCompare(b.name));
+  if (!rows.length) return `<div class="empty">${q ? "No ingredient matches your search." : "Nothing here. Every ingredient is fine."}</div>`;
+  return rows.map((r) => {
+    const pct = Math.max(0, Math.min(100, (r.on_hand / r.par_level) * 100));
+    const left = r.days_left == null ? "No recent use" : `${fmt(r.days_left)} ${r.days_left === 1 ? "day" : "days"} left`;
+    const tight = r.days_left != null && r.days_left <= r.lead_days + 1;
+    const open = stockOpen === r.id;
+    return `<div class="stk ${r.status}${r.on_order ? " coming" : ""}${open ? " open" : ""}">
+      <button class="stk-row" data-stk="${r.id}" aria-expanded="${open}">
+        <span class="sd"></span>
+        <span class="stk-n"><b>${esc(r.name)}</b><small>${fmt(r.on_hand)} ${r.unit}${r.on_order ? " · order on the way" : ""}</small></span>
+        <span class="stk-m"><i style="width:${pct}%"></i></span>
+        <span class="stk-l${tight ? " tight" : ""}">${left}</span>
+        ${ICONS.chevron}
+      </button>
+      ${open ? `<div class="stk-more">
+        ${r.status !== "ok" && r.reason ? `<p class="stk-why"><b>${STOCK_WORD[r.status]}:</b> ${esc(r.reason)}</p>` : ""}
+        <dl class="facts four"><div><dt>On hand</dt><dd>${fmt(r.on_hand)} ${r.unit}</dd></div><div><dt>Minimum</dt><dd>${fmt(r.min_level)}</dd></div><div><dt>Full level</dt><dd>${fmt(r.par_level)}</dd></div><div><dt>Use a day</dt><dd>${fmt(r.avg_daily_use)}</dd></div></dl>
+        <div class="muted stk-sup">${esc(r.supplier)} · delivers in ${r.lead_days} ${r.lead_days === 1 ? "day" : "days"}</div>
+        <div class="stk-count"><label for="cnt-${r.id}">Counted today</label><input id="cnt-${r.id}" class="qty num" type="number" min="0" step="any" inputmode="decimal" placeholder="${fmt(r.on_hand)}"><span class="u">${r.unit}</span><button class="brass" data-count="${r.id}">Save count</button></div>
+      </div>` : ""}
+    </div>`;
+  }).join("");
 }
 
 const VIEWS = {
@@ -313,7 +353,7 @@ const VIEWS = {
         ${needs.map((p) => `<button class="more-row need ${p.level}" ${p.go ? `data-go="${p.go}"` : "disabled"}><span class="lvl"></span><span>${esc(p.text)}</span>${p.go ? ICONS.chevron : ""}</button>`).join("")}
       </div></div>
       <div class="section"><div class="agent">
-        <div class="agent-h"><span class="badge">${ICONS.agent}</span><div><b>Manager overview</b><small>${brief ? `Briefed ${timeOf(brief.at)} · ${brief.source === "ai" ? "by Claude" : "rules mode"}` : "Not run yet"}</small></div></div>
+        <div class="agent-h"><span class="badge">${ICONS.overviewAgent}</span><div><b>Manager overview</b><small>${brief ? `Briefed ${timeOf(brief.at)} · ${byWhom(brief)}` : "Not run yet"}</small></div></div>
         <p class="big">${brief ? esc(brief.headline) : "Tap below for a briefing across sales, stock, orders and costs."}</p>
         ${(brief?.points || []).map((p) => `<p class="pt">${esc(p)}</p>`).join("")}
         <button class="secondary-btn" id="run-overview">Brief me now</button>
@@ -324,18 +364,18 @@ const VIEWS = {
         <div><div class="label">Avg. ticket</div><div class="value num">${sar(t.avg_ticket)}</div></div>
         <div><div class="label">Helper sales</div><div class="value num">${sar(t.suggested_sales)}</div></div>
       </div></div>
-      <div class="section"><div class="hero flat">
+      <div class="section"><div class="hero flat center">
         <div><div class="label">Forecast tomorrow</div><div class="value num">${sar(ov.facts.forecast_tomorrow)}</div></div>
         <div><div class="label">Profit, 7 days</div><div class="value num" style="color:${ov.facts.profit_7d >= 0 ? "var(--ok)" : "var(--bad)"}">${sar(ov.facts.profit_7d)}</div></div>
       </div></div>
-      <div class="section"><h2>Cashier helper</h2><div class="panel">
-        <div class="hero" style="margin:0;box-shadow:none;padding:0;grid-template-columns:repeat(3,minmax(0,1fr))">
-          <div><div class="label">Shown</div><div class="value num">${ins.shown}</div></div>
-          <div><div class="label">Accepted</div><div class="value num">${ins.accepted}</div></div>
-          <div><div class="label">Rate</div><div class="value num">${rate}</div></div>
+      <div class="section"><h2>Cashier helper</h2><div class="panel hc">
+        <div class="hc-top">
+          <div class="hc-ring" style="--p:${ins.acceptance_rate == null ? 0 : Math.round(ins.acceptance_rate * 100)}"><span class="num">${rate}</span></div>
+          <div class="hc-say"><b>${ins.shown ? `${rate} of suggestions were added` : "No suggestions shown yet"}</b>
+            <span>${ins.accepted.toLocaleString("en-US")} added out of ${ins.shown.toLocaleString("en-US")} shown on the cashier iPad</span></div>
         </div>
-        <div style="margin-top:14px">${ins.top_accepted.length ? ins.top_accepted.map((x) => `<div class="list-item"><span>${esc(x.name)}</span><b class="num">${x.count}×</b></div>`).join("") : '<div class="muted">No suggestions accepted yet.</div>'}</div>
-        <div class="muted" style="font-size:13px;margin-top:10px">Add-on revenue from accepted suggestions, all time: <b>${sar(ins.added_revenue)}</b></div>
+        <div class="hc-rev"><span>Extra sales from the helper</span><b class="num">${sar(ins.added_revenue)}</b></div>
+        ${ins.top_accepted.length ? `<div class="hc-items"><span class="lbl">Added most often</span><div class="hc-chips">${ins.top_accepted.map((x) => `<span class="hc-chip">${esc(x.name)}<b class="num">${x.count}×</b></span>`).join("")}</div></div>` : ""}
       </div></div>
       <div class="section"><h2>Cashier devices</h2><div class="panel">
         <div class="muted" style="font-size:14px;margin-bottom:8px">The cashier account only works on devices paired here.</div>
@@ -364,7 +404,7 @@ const VIEWS = {
       <div class="section panel chart-card"><h3>Sales by day</h3><div class="sub">SAR, all channels</div><div id="c-daily"></div>
         <details class="table"><summary>Show as table</summary><table><tr><th>Day</th><th>Orders</th><th>Sales</th></tr>${s.daily.map((d) => `<tr><td>${day(d.date)}</td><td class="num">${d.orders}</td><td class="num">${sar(d.sales)}</td></tr>`).join("")}</table></details></div>
       <div class="panel chart-card"><h3>Average order value</h3><div class="sub">SAR per order, by day</div><div id="c-aov"></div></div>
-      <div class="panel chart-card"><h3>Sales by hour today</h3><div class="sub">SAR, cashier orders</div><div id="c-hour"></div></div>
+      <div class="panel chart-card"><h3>Sales by hour</h3><div class="sub">Average SAR per day, last ${salesDays} days</div><div id="c-hour"></div></div>
       <div class="panel chart-card"><h3>Top items</h3><div class="sub">By sales, last ${salesDays} days</div><div id="c-top"></div></div>
       <div class="panel chart-card"><h3>Sales by category</h3><div class="sub">Share of sales, last ${salesDays} days</div><div id="c-cat"></div>
         <details class="table"><summary>Show as table</summary><table><tr><th>Category</th><th>Sales</th></tr>${s.categories.map((c) => `<tr><td>${c.category}</td><td class="num">${sar(c.sales)}</td></tr>`).join("")}</table></details></div>
@@ -375,6 +415,8 @@ const VIEWS = {
     const [pos, runs] = await Promise.all([api("/api/purchase-orders"), api("/api/agents/runs")]);
     const run = runs.find((r) => r.agent === "stock");
     if (!pos.length) return `<div class="section">${agentCard(run)}</div><div class="section panel empty">No supplier orders yet.</div>`;
+    const dayOf = (iso, o = { weekday: "short", day: "numeric", month: "short" }) => new Date(iso.length === 10 ? iso + "T00:00" : iso + "Z").toLocaleDateString("en-GB", o);
+    const todayIso = new Date().toISOString().slice(0, 10);
     const lineHtml = (l, draft) => {
       const input = `<input class="qty num" type="number" min="0" step="any" value="${l.qty}" data-line="${l.id}" aria-label="Quantity of ${esc(l.ingredient)}"><span class="u">${l.unit}</span>`;
       if (draft && l.change) return `<div class="item-card changed">
@@ -383,24 +425,58 @@ const VIEWS = {
         <p class="because">${esc(l.change.reason)}</p>
         <button class="link undo" data-undo="${l.change.from}" data-line="${l.id}">Change it back to ${fmt(l.change.from)} ${l.unit}</button></div>`;
       return `<div class="ln"><span class="n">${esc(l.ingredient)}</span><span class="q">${draft ? input : `<b class="num">${fmt(l.qty)}</b> ${l.unit}`}</span>
-        ${draft ? `<details class="why-d"><summary>Why this amount</summary><p>${esc(l.reason || "")}</p></details>` : ""}</div>`;
+        ${draft && l.reason ? `<p class="why">${esc(l.reason)}</p>` : ""}</div>`;
     };
+    // the agent's note often repeats each line's reason (rules mode always does); show it only when it adds something
+    const extraNote = (po) => {
+      let rest = po.note || "";
+      po.lines.forEach((l) => { rest = rest.split(`${l.ingredient}: ${l.reason}`).join("").split(l.reason).join(""); });
+      return rest.replace(/[\s.;,:-]+/g, " ").trim().length > 15 ? po.note : "";
+    };
+    // where the order is in its journey: drafted, sent, on the way, delivered
+    const track = (po) => {
+      const late = po.status === "sent" && po.expected < todayIso;
+      const steps = [["Drafted", dayOf(po.created_at)], ["Approved and sent", po.sent_at ? dayOf(po.sent_at) : ""],
+        [late ? "Late" : "On the way", po.expected ? `Due ${dayOf(po.expected)}` : ""], ["Delivered", po.delivery?.at ? dayOf(po.delivery.at) : ""]];
+      const at = { draft: 0, sent: 2, received: 3 }[po.status];
+      return `<ol class="track">${steps.map(([t, d], i) => `<li class="${i < at || po.status === "received" ? "done" : i === at ? (late ? "now late" : "now") : ""}"><i></i><b>${t}</b><small>${d}</small></li>`).join("")}</ol>`;
+    };
+    const chipFor = (po) => po.status === "draft" ? '<span class="chip draft">Needs approval</span>'
+      : po.status === "sent" ? (po.expected < todayIso ? '<span class="chip negative">Late</span>' : '<span class="chip sent">On the way</span>')
+      : po.status === "received" ? '<span class="chip received">Delivered</span>' : '<span class="chip rejected">Rejected</span>';
     const card = (po) => {
       const draft = po.status === "draft";
       const cost = po.lines.reduce((s, l) => s + l.est_cost, 0);
+      const note = draft ? extraNote(po) : "";
+      const got = Object.fromEntries((po.delivery?.lines || []).map((d) => [d.ingredient_id, d.qty]));
       return `<div class="panel po${po.changed && draft ? " flagged" : ""}" data-id="${po.id}">
-        <div class="po-head"><div><b>${esc(po.supplier)}</b><small>Order #${po.id} · drafted by the stock agent</small></div><span class="chip ${po.status}">${draft ? "Needs approval" : po.status}</span></div>
-        <dl class="facts"><div><dt>Delivery</dt><dd>${po.lead_days} ${po.lead_days === 1 ? "day" : "days"}</dd></div><div><dt>Items</dt><dd>${po.lines.length}</dd></div><div><dt>Est. cost</dt><dd>${sar(cost)}</dd></div></dl>
-        ${po.lines.map((l) => lineHtml(l, draft)).join("")}
-        ${draft && po.note ? `<details class="why-d"><summary>What the agent said about this order</summary><p>${esc(po.note)}</p></details>` : ""}
-        ${draft ? `<div class="row"><button class="brass approve">Approve and send</button><button class="reject">Reject</button></div>` : ""}
-        ${draft && po.channel === "whatsapp" ? '<div class="muted" style="font-size:13px;margin-top:8px">This supplier takes orders on WhatsApp.</div>' : ""}
-        ${po.status === "sent" ? `<div class="btns">${po.whatsapp_link ? `<a class="wa" href="${esc(po.whatsapp_link)}" target="_blank" rel="noopener">${ICONS.whatsapp}Send on WhatsApp</a>` : ""}<button class="brass approve receive">Mark as delivered</button></div>` : ""}
+        <div class="po-head"><div><b>${esc(po.supplier)}</b><small>Order #${po.id} · drafted by the stock agent</small></div>${chipFor(po)}</div>
+        ${po.status === "rejected" ? "" : track(po)}
+        ${note ? `<div class="agent-note">${ICONS.spark}<p>${esc(note)}</p></div>` : ""}
+        <dl class="facts"><div><dt>${po.status === "draft" ? "Delivery" : po.status === "received" ? "Delivered" : "Due"}</dt><dd>${draft ? `${po.lead_days} ${po.lead_days === 1 ? "day" : "days"}` : po.status === "received" ? (po.delivery?.at ? dayOf(po.delivery.at, { day: "numeric", month: "short" }) : "Yes") : po.expected ? dayOf(po.expected, { weekday: "short", day: "numeric" }) : "–"}</dd></div><div><dt>Items</dt><dd>${po.lines.length}</dd></div><div><dt>Est. cost</dt><dd>${sar(cost)}</dd></div></dl>
+        ${po.status === "received" ? po.lines.map((l) => { const r = got[l.ingredient_id] ?? 0, short = r < l.qty;
+            return `<div class="ln"><span class="n">${esc(l.ingredient)}</span><span class="q"><b class="num">${fmt(r)}</b> of ${fmt(l.qty)} ${l.unit}${short ? ' <span class="chip low">Short</span>' : ""}</span></div>`; }).join("")
+          : po.lines.map((l) => lineHtml(l, draft)).join("")}
+        ${draft ? `<div class="row"><button class="brass approve">Approve and send</button><button class="reject">Reject</button></div>
+          <p class="after">${po.channel === "whatsapp" ? "After you approve, a Send on WhatsApp button appears with the order typed in for the supplier." : "After you approve, the order is emailed to the supplier."} It then waits here under <b>On the way</b> until you confirm the delivery.</p>` : ""}
+        ${po.status === "sent" ? `<div class="sent-how">${po.channel === "whatsapp" ? "Order written for WhatsApp" : "Order emailed to the supplier"}${po.sent_at ? ` · ${dayOf(po.sent_at)}` : ""}</div>
+          <div class="btns">${po.whatsapp_link ? `<a class="wa" href="${esc(po.whatsapp_link)}" target="_blank" rel="noopener">${ICONS.whatsapp}Send on WhatsApp</a>` : ""}<button class="brass open-receive">Confirm delivery</button></div>
+          <div class="receive-form" hidden>
+            <p class="muted">Enter what really arrived. Change a number if the supplier sent less or more.</p>
+            ${po.lines.map((l) => `<label class="rf-line"><span>${esc(l.ingredient)}</span><span class="q"><input class="qty num" type="number" min="0" step="any" value="${l.qty}" data-ing="${l.ingredient_id}" aria-label="Received ${esc(l.ingredient)}"><span class="u">${l.unit}</span></span></label>`).join("")}
+            <label class="field">Invoice number (optional)<input class="inv-ref" type="text" maxlength="40"></label>
+            <div class="row"><button class="brass receive">Add to stock</button><button class="reject cancel-receive">Cancel</button></div>
+            <button class="link" data-go="deliveries">Read the invoice photo instead</button>
+          </div>` : ""}
       </div>`;
     };
-    const drafts = pos.filter((p) => p.status === "draft").sort((a, b) => b.changed - a.changed), rest = pos.filter((p) => p.status !== "draft");
+    const by = (st) => pos.filter((p) => p.status === st);
+    const drafts = by("draft").sort((a, b) => b.changed - a.changed), sent = by("sent"), received = by("received"), rejected = by("rejected");
+    const group = (title, list, sub = "") => list.length ? `<div class="section"><h2>${title}${sub}</h2>${list.map(card).join("")}</div>` : "";
     return `${drafts.length ? `<div class="section first"><h2>Waiting for your approval</h2>${drafts.map(card).join("")}</div>` : `<div class="section first">${agentCard(run)}</div>`}
-      ${rest.length ? `<div class="section"><h2>History</h2>${rest.map(card).join("")}</div>` : ""}`;
+      ${group("On the way", sent)}
+      ${group("Delivered", received.slice(0, 5))}
+      ${received.length > 5 || rejected.length ? `<div class="section"><details class="older"><summary>${received.length > 5 ? `${received.length - 5} older deliveries` : ""}${received.length > 5 && rejected.length ? " and " : ""}${rejected.length ? `${rejected.length} rejected` : ""}</summary>${[...received.slice(5), ...rejected].map(card).join("")}</details></div>` : ""}`;
   },
 
   async steps() {
@@ -421,22 +497,18 @@ const VIEWS = {
 
   async stock() {
     const [rows, runs] = await Promise.all([api("/api/stock"), api("/api/agents/runs")]);
-    const order = { negative: 0, low: 1, ok: 2 };
-    rows.sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name));
-    const row = (r) => {
-      const pct = Math.max(0, Math.min(100, (r.on_hand / r.par_level) * 100));
-      const minPct = (r.min_level / r.par_level) * 100;
-      return `<div class="stock-row"><span class="n">${esc(r.name)}</span><span class="chip ${r.status}">${r.status === "ok" ? "OK" : r.status}</span>
-        <div class="meter ${r.status}"><i style="width:${pct}%"></i><b style="left:${minPct}%"></b></div>
-        <span class="d num">${fmt(r.on_hand)} ${r.unit} on hand · min ${fmt(r.min_level)} · ${r.days_left == null ? "no recent use" : `${r.days_left} days left`} · ${esc(r.supplier)}${r.status === "low" && r.reason ? `<br><b>Low: ${esc(r.reason)}</b> (${r.lead_days}-day delivery)${r.on_order ? " · order on the way" : ""}` : ""}</span></div>`;
-    };
-    return `<div class="section">${agentCard(runs.find((r) => r.agent === "stock"))}</div>
-      <div class="section"><h2>Ingredients</h2><div class="panel">${rows.map(row).join("")}</div></div>
-      <div class="section"><h2>Monthly count</h2><div class="panel form">
-        <label class="field">Ingredient<select id="c-ing">${rows.map((r) => `<option value="${r.id}">${esc(r.name)} (${r.unit})</option>`).join("")}</select></label>
-        <label class="field">Counted quantity<input id="c-qty" type="number" min="0" step="any" inputmode="decimal"></label>
-        <button class="solid" id="c-save">Save count</button>
-      </div></div>`;
+    window._stk = rows;
+    const run = runs.find((r) => r.agent === "stock");
+    const n = (f) => rows.filter(STOCK_FILTERS[f].test).length;
+    if (stockFilter === "need" && !n("need")) stockFilter = "all";
+    return `<div class="section first"><div class="panel strip"><span class="badge sm">${ICONS.stockAgent}</span>
+        <div><b>Stock agent</b><small>${run ? `Last check ${timeOf(run.at)} · ${byWhom(run)}` : "No check yet today"}</small></div>
+        <button class="secondary-btn" id="run-agent">Run check</button></div></div>
+      <div class="section stk-tools">
+        <div class="stk-filters" role="group" aria-label="Show">${Object.entries(STOCK_FILTERS).map(([k, f]) => `<button data-sf="${k}" aria-pressed="${k === stockFilter}" class="${k}">${f.label}<b class="num">${n(k)}</b></button>`).join("")}</div>
+        <label class="stk-search">${ICONS.search}<input id="stk-q" type="search" placeholder="Search ingredients" value="${esc(stockQuery)}" autocomplete="off"></label>
+      </div>
+      <div class="section"><div class="panel stk-list" id="stk-list"></div></div>`;
   },
 
   async deliveries() {
@@ -552,9 +624,10 @@ const BIND = {
     const every = s.daily.length > 14 ? 5 : s.daily.length > 7 ? 2 : 1;
     Charts.line($("c-daily"), s.daily.map((d) => ({ value: d.sales, label: day(d.date).getDate(), tip: `${day(d.date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}<br><b>${sar(d.sales)}</b> · ${d.orders} orders` })), { labelEvery: every });
     Charts.line($("c-aov"), s.daily.map((d) => { const v = d.orders ? d.sales / d.orders : 0; return { value: v, label: day(d.date).getDate(), tip: `${day(d.date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}<br><b>${sar(v)}</b> per order` }; }), { height: 150, labelEvery: every, area: false });
-    const hours = Array.from({ length: 16 }, (_, i) => i + 8).map((h) => ({ h, v: 0, n: 0 }));
-    s.today_orders.forEach((o) => { const h = new Date(o.at).getHours(); const b = hours.find((x) => x.h === h); if (b) { b.v += o.total; b.n += 1; } });
-    Charts.columns($("c-hour"), hours.map((b) => ({ value: b.v, label: b.h % 2 === 0 ? `${b.h}` : "", tip: `${b.h}:00–${b.h + 1}:00<br><b>${sar(b.v)}</b> · ${b.n} orders` })), { height: 160 });
+    const hours = Array.from({ length: 14 }, (_, i) => i + 10).map((h) => ({ h, v: 0, n: 0 }));
+    s.period_orders.forEach((o) => { const h = o.hour; const b = hours.find((x) => x.h === h); if (b) { b.v += o.total; b.n += 1; } });
+    const nd = s.daily.length;
+    Charts.columns($("c-hour"), hours.map((b) => ({ value: b.v / nd, label: b.h % 2 === 0 ? `${b.h}` : "", tip: `${b.h}:00–${b.h + 1}:00<br><b>${sar(b.v / nd)}</b> a day · ${fmt(b.n / nd)} orders` })), { height: 160 });
     Charts.bars($("c-top"), s.top_items.map((t) => ({ value: t.sales, label: t.name, tip: `${t.name}<br><b>${sar(t.sales)}</b> · ${t.qty} sold` })));
     const cats = s.categories.length > 5 ? [...s.categories.slice(0, 4), { category: "Other", sales: s.categories.slice(4).reduce((a, c) => a + c.sales, 0) }] : s.categories;
     Charts.donut($("c-cat"), cats.map((c) => ({ value: c.sales, label: c.category, tip: `${c.category}<br><b>${sar(c.sales)}</b>` })), { center: "SAR" });
@@ -577,13 +650,24 @@ const BIND = {
   },
   stock() {
     bindAgent();
-    $("c-save").onclick = async () => {
-      const qty = parseFloat($("c-qty").value);
-      if (isNaN(qty)) return toast("Enter the counted quantity", true);
-      const r = await api("/api/stock/count", { method: "POST", body: JSON.stringify([{ ingredient_id: +$("c-ing").value, counted: qty }]) });
-      const [name, diff] = Object.entries(r.adjustments)[0];
-      toast(`${name} corrected by ${diff > 0 ? "+" : ""}${fmt(diff)}`); render();
+    const draw = () => {
+      $("stk-list").innerHTML = stockList();
+      $("stk-list").querySelectorAll("[data-stk]").forEach((b) => (b.onclick = () => { stockOpen = stockOpen === +b.dataset.stk ? null : +b.dataset.stk; draw(); }));
+      $("stk-list").querySelectorAll("[data-count]").forEach((b) => (b.onclick = async () => {
+        const id = +b.dataset.count, qty = parseFloat($(`cnt-${id}`).value);
+        if (isNaN(qty)) return toast("Enter the counted quantity", true);
+        const r = await api("/api/stock/count", { method: "POST", body: JSON.stringify([{ ingredient_id: id, counted: qty }]) });
+        const [name, diff] = Object.entries(r.adjustments)[0];
+        toast(`${name} corrected by ${diff > 0 ? "+" : ""}${fmt(diff)}`); render();
+      }));
     };
+    document.querySelectorAll("[data-sf]").forEach((b) => (b.onclick = () => {
+      stockFilter = b.dataset.sf;
+      document.querySelectorAll("[data-sf]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.sf === stockFilter));
+      draw();
+    }));
+    $("stk-q").oninput = (e) => { stockQuery = e.target.value; if (stockQuery && stockFilter !== "all") { stockFilter = "all"; document.querySelectorAll("[data-sf]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.sf === "all")); } draw(); };
+    draw();
   },
   orders() {
     bindAgent();
@@ -602,10 +686,16 @@ const BIND = {
         catch (e) { toast(e.message, true); ev.target.disabled = false; }
       });
       el.querySelector(".reject")?.addEventListener("click", async () => { await api(`/api/purchase-orders/${id}/reject`, { method: "POST" }); toast("Order rejected"); render(); });
-      el.querySelector(".receive")?.addEventListener("click", async () => {
-        const po = (await api("/api/purchase-orders")).find((p) => p.id == id);
-        await api(`/api/purchase-orders/${id}/receive`, { method: "POST", body: JSON.stringify({ lines: po.lines.map((l) => ({ ingredient_id: l.ingredient_id, qty: l.qty })) }) });
-        toast("Delivery added to stock"); render();
+      const form = el.querySelector(".receive-form");
+      el.querySelector(".open-receive")?.addEventListener("click", (ev) => { form.hidden = false; ev.target.closest(".btns").hidden = true; });
+      el.querySelector(".cancel-receive")?.addEventListener("click", () => { form.hidden = true; el.querySelector(".btns").hidden = false; });
+      el.querySelector(".receive")?.addEventListener("click", async (ev) => {
+        const lines = [...form.querySelectorAll("input[data-ing]")].map((i) => ({ ingredient_id: +i.dataset.ing, qty: parseFloat(i.value) || 0 })).filter((l) => l.qty > 0);
+        if (!lines.length) return toast("Enter what arrived for at least one item", true);
+        ev.target.disabled = true;
+        try { await api(`/api/purchase-orders/${id}/receive`, { method: "POST", body: JSON.stringify({ lines, invoice_ref: form.querySelector(".inv-ref").value.trim() || null }) });
+          toast("Delivery added to stock"); render(); }
+        catch (e) { toast(e.message, true); ev.target.disabled = false; }
       });
     });
   },
@@ -651,8 +741,10 @@ const BIND = {
   status = await api("/api/status");
   $("store").textContent = `${status.store} · ${new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}`;
   $("back-icon").innerHTML = ICONS.back;
-  $("ai-badge").textContent = status.ai_enabled ? "AI on" : "Rules mode";
+  $("ai-badge").textContent = status.ai_enabled ? "AI on" : "AI off";
   $("ai-badge").classList.toggle("on", status.ai_enabled);
+  $("ai-badge").title = status.ai_enabled ? "The agents use Claude." : "No Claude key is set, so the agents use the built-in rules: fixed calculations, no AI.";
+  $("ai-badge").onclick = () => toast($("ai-badge").title);
   window.onhashchange = () => { const t = location.hash.slice(1); if (t && t !== tab && VIEWS[t]) { tab = t; render(); } };
   render();
 })();
