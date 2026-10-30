@@ -4,12 +4,14 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const fmt = (n) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 1 });
 const TABS = [
   { id: "today", label: "Today", icon: "today" },
+  { id: "sales", label: "Sales", icon: "sales" },
   { id: "orders", label: "Orders", icon: "orders" },
   { id: "stock", label: "Stock", icon: "stock" },
   { id: "deliveries", label: "Deliveries", icon: "delivery" },
 ];
 let tab = location.hash.slice(1) || "today";
 let status = {};
+let salesDays = 14;
 
 async function api(path, opts = {}) {
   const isForm = opts.body instanceof FormData;
@@ -83,6 +85,30 @@ const VIEWS = {
         <div id="pair-out"></div>
         <div class="btns" style="display:flex;gap:8px;margin-top:12px"><button class="pair-btn" id="pair-new">Pair a cashier iPad</button><button class="secondary-btn" id="logout">Sign out</button></div>
       </div></div>`;
+  },
+
+  async sales() {
+    const s = await api(`/api/sales/summary?days=${salesDays}`);
+    window._sales = s;
+    const total = s.daily.reduce((a, d) => a + d.sales, 0), orders = s.daily.reduce((a, d) => a + d.orders, 0);
+    const best = s.daily.reduce((a, d) => (d.sales > a.sales ? d : a), s.daily[0]);
+    const helper = s.daily.reduce((a, d) => a + d.helper_sales, 0);
+    const day = (iso) => new Date(iso + "T00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+    return `<div class="section" style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0 0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">Last ${salesDays} days</h2>
+        <div class="seg" role="group" aria-label="Date range">${[7, 14, 30].map((d) => `<button data-days="${d}" aria-pressed="${d === salesDays}">${d} days</button>`).join("")}</div></div>
+      <div class="hero" style="margin-top:12px">
+        <div><div class="label">Sales</div><div class="value num">${sar(total)}</div></div>
+        <div><div class="label">Orders</div><div class="value num">${orders.toLocaleString("en-US")}</div></div>
+        <div><div class="label">Avg. per day</div><div class="value num">${sar(total / s.daily.length)}</div></div>
+        <div><div class="label">Best day</div><div class="value num" style="font-size:20px">${day(best.date)}<br><small>${sar(best.sales)}</small></div></div>
+      </div>
+      <div class="section panel chart-card"><h3>Sales by day</h3><div class="sub">SAR, all channels</div><div id="c-daily"></div>
+        <details class="table"><summary>Show as table</summary><table><tr><th>Day</th><th>Orders</th><th>Sales</th></tr>${s.daily.map((d) => `<tr><td>${day(d.date)}</td><td class="num">${d.orders}</td><td class="num">${sar(d.sales)}</td></tr>`).join("")}</table></details></div>
+      <div class="panel chart-card"><h3>Sales by hour today</h3><div class="sub">SAR, cashier orders</div><div id="c-hour"></div></div>
+      <div class="panel chart-card"><h3>Top items</h3><div class="sub">By sales, last ${salesDays} days</div><div id="c-top"></div></div>
+      <div class="panel chart-card"><h3>Sales by category</h3><div class="sub">SAR, last ${salesDays} days</div><div id="c-cat"></div></div>
+      <div class="panel chart-card"><h3>Cashier helper add-on sales</h3><div class="sub">SAR from accepted suggestions · ${sar(helper)} in total</div><div id="c-helper"></div></div>`;
   },
 
   async orders() {
@@ -160,6 +186,19 @@ function bindAgent() {
 }
 
 const BIND = {
+  sales() {
+    const s = window._sales;
+    const day = (iso) => new Date(iso + "T00:00");
+    const every = s.daily.length > 14 ? 5 : s.daily.length > 7 ? 2 : 1;
+    Charts.columns($("c-daily"), s.daily.map((d) => ({ value: d.sales, label: day(d.date).getDate(), tip: `${day(d.date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}<br><b>${sar(d.sales)}</b> · ${d.orders} orders` })), { labelEvery: every });
+    const hours = Array.from({ length: 16 }, (_, i) => i + 8).map((h) => ({ h, v: 0, n: 0 }));
+    s.today_orders.forEach((o) => { const h = new Date(o.at).getHours(); const b = hours.find((x) => x.h === h); if (b) { b.v += o.total; b.n += 1; } });
+    Charts.columns($("c-hour"), hours.map((b) => ({ value: b.v, label: b.h % 2 === 0 ? `${b.h}` : "", tip: `${b.h}:00–${b.h + 1}:00<br><b>${sar(b.v)}</b> · ${b.n} orders` })), { height: 160 });
+    Charts.bars($("c-top"), s.top_items.map((t) => ({ value: t.sales, label: t.name, tip: `${t.name}<br><b>${sar(t.sales)}</b> · ${t.qty} sold` })));
+    Charts.bars($("c-cat"), s.categories.map((c) => ({ value: c.sales, label: c.category, tip: `${c.category}<br><b>${sar(c.sales)}</b>` })));
+    Charts.columns($("c-helper"), s.daily.map((d) => ({ value: d.helper_sales, label: day(d.date).getDate(), tip: `${day(d.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}<br><b>${sar(d.helper_sales)}</b> from suggestions` })), { height: 140, labelEvery: every, color: getComputedStyle(document.documentElement).getPropertyValue("--chart-2").trim() || undefined });
+    document.querySelectorAll("[data-days]").forEach((b) => (b.onclick = () => { salesDays = +b.dataset.days; render(); }));
+  },
   today() {
     bindAgent();
     $("logout").onclick = async () => { await api("/api/auth/logout", { method: "POST" }); location.href = "/login"; };

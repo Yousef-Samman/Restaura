@@ -235,6 +235,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db.commit()
         return {"order_id": order.id, "lines": len(items), "total": order.total}
 
+    @app.get("/api/sales/summary")
+    def sales_summary(days: int = 14, db: Session = Depends(get_db), _=Depends(manager_only)):
+        days = max(1, min(days, 90))
+        today_d = dt.date.today()
+        since = today_d - dt.timedelta(days=days - 1)
+        daily = dict(db.execute(select(Order.business_date, func.sum(Order.total)).where(Order.business_date >= since)
+                                .group_by(Order.business_date)).all())
+        counts = dict(db.execute(select(Order.business_date, func.count(Order.id)).where(Order.business_date >= since)
+                                 .group_by(Order.business_date)).all())
+        helper = dict(db.execute(select(Order.business_date, func.sum(OrderLine.price * OrderLine.qty)).join(Order)
+                                 .where(Order.business_date >= since, OrderLine.from_suggestion)
+                                 .group_by(Order.business_date)).all())
+        dates = [since + dt.timedelta(days=i) for i in range(days)]
+        top = db.execute(select(MenuItem.name, func.sum(OrderLine.qty), func.sum(OrderLine.qty * OrderLine.price))
+                         .join(OrderLine).join(Order).where(Order.business_date >= since)
+                         .group_by(MenuItem.name).order_by(func.sum(OrderLine.qty * OrderLine.price).desc()).limit(6)).all()
+        cats = db.execute(select(MenuItem.category, func.sum(OrderLine.qty * OrderLine.price)).join(OrderLine).join(Order)
+                          .where(Order.business_date >= since).group_by(MenuItem.category)
+                          .order_by(func.sum(OrderLine.qty * OrderLine.price).desc())).all()
+        today_orders = db.execute(select(Order.created_at, Order.total)
+                                  .where(Order.business_date == today_d, Order.source == "cashier")).all()
+        return {
+            "daily": [{"date": d.isoformat(), "sales": round(daily.get(d, 0), 2), "orders": counts.get(d, 0),
+                       "helper_sales": round(helper.get(d, 0), 2)} for d in dates],
+            "top_items": [{"name": n, "qty": q, "sales": round(v, 2)} for n, q, v in top],
+            "categories": [{"category": c, "sales": round(v, 2)} for c, v in cats],
+            "today_orders": [{"at": a.isoformat() + "Z", "total": t} for a, t in today_orders],
+        }
+
     # ---- stock and the stock-to-order agent ----------------------------------
     @app.get("/api/stock")
     def get_stock(db: Session = Depends(get_db), _=Depends(manager_only)):

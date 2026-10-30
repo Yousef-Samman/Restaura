@@ -114,3 +114,11 @@ def test_pos_import_rejects_unknown_items(client):
 def test_invoice_reading_needs_key(client):
     r = client.post("/api/invoices/read", files={"file": ("inv.jpg", b"x", "image/jpeg")})
     assert r.status_code == 503
+
+
+def test_sales_summary(client):
+    client.post("/api/orders", json={"lines": [{"item_id": item_id(client, "Latte"), "qty": 2}]})
+    s = client.get("/api/sales/summary?days=14").json()
+    assert len(s["daily"]) == 14 and s["daily"][-1]["sales"] >= 42
+    assert s["top_items"] and s["categories"]
+    assert len(s["today_orders"]) == 1

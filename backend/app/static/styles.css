@@ -6,6 +6,7 @@
   --ink: #14102E; --slate: var(--indigo); --slate-2: #241D52; --slate-3: #3A3270;
   --silver: #C9CFD8; --silver-2: #DDE1E8; --cloud: #F7F7FB; --paper: #FFFFFF; --line: #E7E6F0;
   --muted: #6B6889; --ok: #16A34A; --ok-bg: #DCFCE7; --warn: #C2410C; --warn-bg: #FFEDD5; --bad: #DC2626; --bad-bg: #FEE2E2;
+  --chart: var(--indigo);
   --r-lg: 22px; --r: 16px; --r-sm: 12px;
   --shadow: 0 1px 2px rgba(20,16,46,.04), 0 8px 24px rgba(20,16,46,.06);
   --shadow-lift: 0 2px 4px rgba(20,16,46,.06), 0 16px 36px rgba(91,76,255,.18);
@@ -191,7 +192,7 @@ body.has-hero .mgr-top { padding-bottom: 72px; }
 .list-item { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; }
 .list-item:first-child { border-top: 0; }
 .tabbar { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,.94); backdrop-filter: blur(12px); border-top: 1px solid var(--line); display: flex; justify-content: center; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); z-index: 20; }
-.tabbar .in { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; max-width: 520px; }
+.tabbar .in { display: grid; width: 100%; }
 .tabbar button { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: var(--muted); padding: 6px 0; border-radius: 12px; position: relative; }
 .tabbar svg { width: 24px; height: 24px; }
 .tabbar button[aria-current="page"] { color: var(--indigo); }
@@ -200,3 +201,22 @@ body.has-hero .mgr-top { padding-bottom: 72px; }
 .empty { color: var(--muted); text-align: center; padding: 20px 0; }
 .pair-btn { height: 46px; padding: 0 16px; border-radius: 14px; background: var(--indigo); color: #fff; font-weight: 800; flex: 1; }
 .secondary-btn { height: 40px; padding: 0 14px; border-radius: 12px; background: var(--cloud); border: 1px solid var(--line); font-weight: 700; }
+.chart { position: relative; }
+.chart svg { display: block; overflow: visible; }
+.chart .tick { font-size: 11px; fill: var(--muted); font-family: inherit; }
+.chart .lbl { font-size: 13px; fill: var(--ink); font-weight: 600; font-family: inherit; }
+.chart .val { font-size: 12px; fill: var(--muted); font-weight: 700; font-family: inherit; }
+.ctip { position: absolute; pointer-events: none; opacity: 0; transition: opacity .1s; background: var(--ink); color: #fff; font-size: 12px; font-weight: 600; padding: 7px 10px; border-radius: 10px; white-space: nowrap; z-index: 5; }
+.ctip b { font-weight: 800; }
+.chart-card h3 { margin: 0; font-size: 16px; font-weight: 800; }
+.chart-card .sub { font-size: 13px; color: var(--muted); margin: 2px 0 14px; }
+.chart-card + .chart-card { margin-top: 14px; }
+.seg { display: inline-flex; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
+.seg button { height: 34px; padding: 0 14px; border-radius: 9px; font-weight: 700; font-size: 13px; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+details.table { margin-top: 10px; font-size: 13px; }
+details.table summary { cursor: pointer; color: var(--muted); font-weight: 700; }
+details.table table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+details.table td, details.table th { text-align: left; padding: 6px 0; border-top: 1px solid var(--line); }
+details.table td:last-child, details.table th:last-child { text-align: right; }
+.tabbar .in { grid-template-columns: repeat(5, 1fr); max-width: 600px; }
