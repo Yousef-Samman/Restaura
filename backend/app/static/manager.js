@@ -272,7 +272,8 @@ const VIEWS = {
           : `<b class="num">${fmt(l.qty)}</b> ${l.unit}`}</td></tr>`).join("")}
           <tr><td class="muted">Estimated cost</td><td class="q"><b class="num">${sar(cost)}</b></td></tr></table>
         ${draft ? `<div class="btns"><button class="approve">Approve and send</button><button class="reject">Reject</button></div>` : ""}
-        ${po.status === "sent" ? `<div class="btns"><button class="approve receive">Mark as delivered</button></div>` : ""}
+        ${draft && po.channel === "whatsapp" ? '<div class="muted" style="font-size:13px;margin-top:8px">This supplier takes orders on WhatsApp.</div>' : ""}
+        ${po.status === "sent" ? `<div class="btns">${po.whatsapp_link ? `<a class="wa" href="${esc(po.whatsapp_link)}" target="_blank" rel="noopener">${ICONS.whatsapp}Send on WhatsApp</a>` : ""}<button class="approve receive">Mark as delivered</button></div>` : ""}
       </div>`;
     };
     const drafts = pos.filter((p) => p.status === "draft"), rest = pos.filter((p) => p.status !== "draft");
@@ -318,7 +319,7 @@ const VIEWS = {
         <div class="muted" style="font-size:14px">Upload the day's sales as CSV with columns <b>item,qty</b> if the POS is not connected.</div>
         <label class="field">CSV file<input id="pos" type="file" accept=".csv,text/csv"></label>
       </div></div>
-      <div class="section"><h2>Emails to suppliers</h2><div class="panel">${mails.length ? mails.slice(0, 8).map((m) => `<div class="list-item"><span>${esc(m.subject)}<br><span class="muted">${esc(m.to)}</span></span><span class="chip ${m.status === "sent" ? "received" : m.status === "failed" ? "negative" : "draft"}">${m.status}</span></div>`).join("") : '<div class="muted">No emails yet.</div>'}</div></div>`;
+      <div class="section"><h2>Messages to suppliers</h2><div class="panel">${mails.length ? mails.slice(0, 8).map((m) => `<div class="list-item"><span>${esc(m.subject)}<br><span class="muted">${esc(m.to)}</span></span><span class="chip ${m.status === "sent" ? "received" : m.status === "failed" ? "negative" : "draft"}">${m.status === "link" ? "WhatsApp" : m.status}</span></div>`).join("") : '<div class="muted">No emails yet.</div>'}</div></div>`;
   },
 };
 
@@ -432,6 +433,7 @@ const BIND = {
         ev.target.disabled = true;
         const edits = [...el.querySelectorAll("input.qty")].map((i) => ({ line_id: +i.dataset.line, qty: parseFloat(i.value) || 0 }));
         try { const r = await api(`/api/purchase-orders/${id}/approve`, { method: "POST", body: JSON.stringify(edits) });
+          if (r.whatsapp_link) { toast("Approved. Tap Send on WhatsApp to message the supplier."); render(); return; }
           toast(r.email.status === "sent" ? `Sent to ${r.email.to}` : r.email.status === "logged" ? "Approved. Email logged (no mail server set)" : `Approved, but email failed: ${r.email.error}`, r.email.status === "failed"); render(); }
         catch (e) { toast(e.message, true); ev.target.disabled = false; }
       });

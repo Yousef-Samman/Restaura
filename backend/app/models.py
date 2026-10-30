@@ -16,6 +16,8 @@ class Supplier(Base):
     name: Mapped[str] = mapped_column(String(120), unique=True)
     email: Mapped[str | None] = mapped_column(String(200))
     lead_days: Mapped[int] = mapped_column(Integer, default=1)
+    channel: Mapped[str] = mapped_column(String(10), default="email")  # email | whatsapp
+    phone: Mapped[str | None] = mapped_column(String(20))  # international format, digits only
 
 
 class Ingredient(Base):

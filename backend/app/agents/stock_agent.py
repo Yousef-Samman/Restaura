@@ -60,7 +60,7 @@ def run(db: Session, llm: LLM) -> dict:
     plural = lambda n, w: f"{n} {w}" + ("" if n == 1 else "s")
     headline = (f"{plural(len(orders), 'supplier order')} drafted for {plural(len(plan), 'ingredient')}. Waiting for your approval."
                 if orders else "Stock is above minimum. No orders needed today.")
-    notes = {po.supplier.name: "; ".join(f"{l.ingredient.name}: {l.reason}" for l in po.lines) for po in orders}
+    notes = {po.supplier.name: " ".join(f"{l.ingredient.name}: {l.reason}" for l in po.lines) for po in orders}
     source = "rules"
     if llm.enabled:
         facts = {

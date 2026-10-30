@@ -16,6 +16,8 @@ class Settings:
     smtp_from: str = field(default_factory=lambda: os.getenv("SMTP_FROM", "orders@restaura.local"))
     # In a demo, every supplier email can be redirected to one inbox you control.
     demo_supplier_email: str | None = field(default_factory=lambda: os.getenv("DEMO_SUPPLIER_EMAIL") or None)
+    # Same for WhatsApp orders: international number, digits only (e.g. 9665XXXXXXXX).
+    demo_supplier_whatsapp: str | None = field(default_factory=lambda: os.getenv("DEMO_SUPPLIER_WHATSAPP") or None)
     # Demo accounts are created on first start. Set your own passwords before showing the app to anyone.
     manager_password: str = field(default_factory=lambda: os.getenv("MANAGER_PASSWORD", "manager-demo"))
     cashier_password: str = field(default_factory=lambda: os.getenv("CASHIER_PASSWORD", "cashier-demo"))

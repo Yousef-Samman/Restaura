@@ -63,26 +63,28 @@ Works after the branch closes.
 | Read the day | Takes the day's sales from the POS | Agent |
 | Convert | Uses each item's recipe to work out ingredient use | Agent |
 | Track | Keeps an estimated stock level per ingredient | Agent |
-| Notice | Flags ingredients below the minimum the manager set | Agent |
+| Notice | Flags ingredients below the minimum the manager set, or that will run out before the supplier can deliver | Agent |
 | Draft | Writes the supplier order with quantities | Agent |
 | Approve | One tap to approve or edit | **Manager** |
-| Send | Emails the approved order to the supplier | Agent |
+| Send | Emails the approved order to the supplier, or opens WhatsApp with the order typed in | Agent |
 | Receive | Reads a photo of the supplier invoice to log the delivery (manual entry as a fallback) | Agent |
 | Correct | A monthly physical count corrects the estimate | **Manager** |
 
 ### One shared brain
 Both agents read and write the same database. What the cashier sells drives what the stock agent orders, and what the stock agent knows has run out disappears from the cashier's screen.
 
-## Planned next
+## More of the restaurant
 
-| Agent | Purpose |
+These sections are built and share the same database. Today they run on rules; the plan is to turn the most used ones into Claude agents next.
+
+| Section | What it does |
 | --- | --- |
-| Staff | Shifts and attendance |
-| Routines | Daily and monthly checklists |
-| Forecasting | Sales forecasts that feed stock needs |
-| Expenses | Costs from invoices, profit and Excel export |
-| Manager overview | One place to see and approve everything |
-| Supplier messaging | Supplier orders by WhatsApp as well as email |
+| Manager overview | Reads every section and ranks what needs the manager first, with a short briefing |
+| Forecast | Next 7 days of sales, tomorrow's prep and which ingredients will run out |
+| Expenses | Monthly and one-off costs, supplier deliveries at cost, and estimated profit |
+| Routines | Opening, mid-shift and closing checklists ticked on the cashier iPad |
+| Staff | PIN clock-in on the cashier iPad, shifts, lateness and hours worked |
+| Supplier messaging | Orders by email or WhatsApp |
 
 ## Principles
 
@@ -106,10 +108,10 @@ Open http://localhost:8000 and sign in. Each account gets its own screens:
 
 | Account | Where it works | Screens |
 | --- | --- | --- |
-| `manager` | Any device, phone first | Today, supplier orders, stock, deliveries, cashier devices |
-| `cashier` | Only on a device the manager paired as the cashier iPad | The cashier screen |
+| `manager` | Any device, phone first | Today (overview), sales, supplier orders, stock, and under More: deliveries, forecast, expenses, routines, staff |
+| `cashier` | Only on a device the manager paired as the cashier iPad | The cashier screen, staff clock-in and daily checklists |
 
-To pair the cashier iPad, sign in as the manager, tap **Pair a cashier iPad** and enter the 6-digit code on the iPad's sign-in page. Demo passwords come from `MANAGER_PASSWORD` and `CASHIER_PASSWORD` (see [`.env.example`](.env.example)); set your own before sharing the app. The app starts with sample data. Without `ANTHROPIC_API_KEY` the agents run in rules mode; set the key (see [`.env.example`](.env.example)) to switch them to Claude.
+Sample staff clock in on the iPad with PINs `1111` to `5555`. To pair the cashier iPad, sign in as the manager, tap **Pair a cashier iPad** and enter the 6-digit code on the iPad's sign-in page. Demo passwords come from `MANAGER_PASSWORD` and `CASHIER_PASSWORD` (see [`.env.example`](.env.example)); set your own before sharing the app. The app starts with sample data. Without `ANTHROPIC_API_KEY` the agents run in rules mode; set the key (see [`.env.example`](.env.example)) to switch them to Claude.
 
 Run the tests with `python -m pytest` inside `backend/`.
 

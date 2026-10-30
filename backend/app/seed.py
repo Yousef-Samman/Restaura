@@ -8,11 +8,14 @@ from sqlalchemy.orm import Session
 from .models import Attendance, Expense, Ingredient, RoutineCheck, RoutineTask, Shift, StaffMember, MenuItem, Order, OrderLine, RecipeLine, StockMove, Supplier
 
 SUPPLIERS = [
-    ("Fresh Produce Co.", "orders@fresh-produce.example", 1),
+    ("Fresh Produce Co.", "orders@fresh-produce.example", 1),  # orders go by WhatsApp, see WHATSAPP below
     ("Dairy Farms Co.", "orders@dairy-farms.example", 1),
     ("Pantry Wholesale", "orders@pantry-wholesale.example", 2),
     ("Frozen Treats Co.", "orders@frozen-treats.example", 2),
 ]
+
+# suppliers that take orders on WhatsApp; the number is a placeholder, not a real business
+WHATSAPP = {"Fresh Produce Co.": "966500000000"}
 
 # name, unit, SAR per unit, min, par, opening stock, supplier
 INGREDIENTS = [
@@ -61,6 +64,8 @@ def seed(db: Session, history_days: int = 30) -> None:
     if db.scalar(select(Supplier).limit(1)):
         return
     suppliers = {name: Supplier(name=name, email=email, lead_days=lead) for name, email, lead in SUPPLIERS}
+    for name, phone in WHATSAPP.items():
+        suppliers[name].channel, suppliers[name].phone = "whatsapp", phone
     db.add_all(suppliers.values())
     ingredients = {}
     for name, unit, cost, mn, par, opening, sup in INGREDIENTS:

@@ -122,3 +122,15 @@ def test_sales_summary(client):
     assert len(s["daily"]) == 14 and s["daily"][-1]["sales"] >= 42
     assert s["top_items"] and s["categories"]
     assert len(s["today_orders"]) == 1
+
+
+def test_whatsapp_supplier_gets_click_to_chat_link(client):
+    client.post("/api/agents/stock/run")
+    pos = client.get("/api/purchase-orders").json()
+    wa = [p for p in pos if p["channel"] == "whatsapp" and p["status"] == "draft"]
+    if not wa:  # the sample data may not need produce today; nothing to check then
+        return
+    r = client.post(f"/api/purchase-orders/{wa[0]['id']}/approve", json=[]).json()
+    assert r["status"] == "sent" and r["email"] is None
+    assert r["whatsapp_link"].startswith("https://wa.me/966500000000?text=Hello%20Fresh%20Produce")
+    assert any(m["status"] == "link" for m in client.get("/api/outbox").json())

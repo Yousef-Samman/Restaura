@@ -281,3 +281,5 @@ details.table td:last-child, details.table th:last-child { text-align: right; }
 .keys button:active { background: var(--accent-soft); }
 .sheet .who { margin-top: 10px; display: grid; gap: 6px; font-weight: 700; font-size: 14px; }
 .sheet .who select { height: 46px; border-radius: 12px; border: 1px solid var(--line); padding: 0 12px; font: inherit; background: var(--paper); }
+.btns a.wa { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 16px; border-radius: 14px; background: #1FA855; color: #fff; font-weight: 800; text-decoration: none; }
+.btns a.wa svg { width: 20px; }

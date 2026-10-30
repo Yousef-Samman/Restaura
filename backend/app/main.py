@@ -1,6 +1,7 @@
 import datetime as dt
 import json
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
@@ -431,8 +432,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                  **json.loads(r.summary)} for r in runs]
 
     # ---- purchase orders -------------------------------------------------------
+    def order_text(po: PurchaseOrder) -> str:
+        return "\n".join([f"Hello {po.supplier.name},", "", f"Please deliver the following to {settings.store_name}:", ""]
+                         + [f"- {l.ingredient.name}: {l.qty:g} {l.ingredient.unit}" for l in po.lines]
+                         + ["", f"Purchase order #{po.id}. Thank you.", settings.store_name])
+
+    def whatsapp_link(po: PurchaseOrder) -> str | None:
+        """Click-to-chat link with the order typed in; the manager presses send in WhatsApp."""
+        number = settings.demo_supplier_whatsapp or po.supplier.phone
+        if po.supplier.channel != "whatsapp" or not number:
+            return None
+        return f"https://wa.me/{''.join(c for c in number if c.isdigit())}?text={quote(order_text(po))}"
+
     def po_dict(po: PurchaseOrder) -> dict:
         return {"id": po.id, "supplier": po.supplier.name, "status": po.status, "note": po.note,
+                "channel": po.supplier.channel, "whatsapp_link": whatsapp_link(po) if po.status == "sent" else None,
                 "created_at": po.created_at.isoformat(), "sent_at": po.sent_at.isoformat() if po.sent_at else None,
                 "lines": [{"id": l.id, "ingredient_id": l.ingredient_id, "ingredient": l.ingredient.name,
                            "unit": l.ingredient.unit, "qty": l.qty, "reason": l.reason,
@@ -465,11 +479,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db.refresh(po)
         if not po.lines:
             raise HTTPException(400, "Order has no lines left")
-        body = "\n".join([f"Hello {po.supplier.name},", "", f"Please deliver the following to {settings.store_name}:", ""]
-                         + [f"- {l.ingredient.name}: {l.qty:g} {l.ingredient.unit}" for l in po.lines]
-                         + ["", f"Purchase order #{po.id}. Thank you.", settings.store_name])
-        mail = mailer.send(db, settings, po.supplier.email or "", f"Purchase order #{po.id} from {settings.store_name}", body)
         po.status, po.sent_at = "sent", dt.datetime.now(dt.UTC).replace(tzinfo=None)
+        if po.supplier.channel == "whatsapp":
+            to = settings.demo_supplier_whatsapp or po.supplier.phone or ""
+            db.add(Outbox(to=f"WhatsApp +{to}", subject=f"Purchase order #{po.id} from {settings.store_name}", body=order_text(po), status="link"))
+            db.commit()
+            return po_dict(po) | {"email": None}
+        mail = mailer.send(db, settings, po.supplier.email or "", f"Purchase order #{po.id} from {settings.store_name}", order_text(po))
         db.commit()
         return po_dict(po) | {"email": {"to": mail.to, "status": mail.status, "error": mail.error}}
 
