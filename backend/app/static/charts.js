@@ -118,7 +118,8 @@ const Charts = (() => {
   }
 
   // donut for parts of a whole (five slices at most), with a legend listing value and share
-  const SLICES = ["#0E8A62", "#D19A2A", "#3F7FC1", "#C25B3A", "#8C64B0"];
+  // logo palette: olive, brass, sage, clay, dark olive
+  const SLICES = ["#667A3E", "#B8923F", "#9DAE7A", "#B0714E", "#3E4D25"];
   function donut(host, data, { center = "", size = 180 } = {}) {
     host.classList.add("chart", "donut"); host.innerHTML = "";
     const total = data.reduce((a, d) => a + d.value, 0) || 1, R = size / 2, r = R * 0.62;

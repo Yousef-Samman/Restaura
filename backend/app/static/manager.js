@@ -17,6 +17,7 @@ const MORE = [
   { id: "routines", label: "Routines", icon: "check", sub: "Opening, mid-shift and closing checklists" },
   { id: "staff", label: "Staff", icon: "people", sub: "Shifts, attendance and hours" },
   { id: "evaluation", label: "Agent evaluation", icon: "gauge", sub: "How the AI agents score on data they have never seen" },
+  { id: "devices", label: "Cashier iPads", icon: "device", sub: "Pair or remove the iPads the cashier signs in on" },
 ];
 // pages reached from a link, not from the tab bar; they show a back arrow
 const SUB = [{ id: "steps", label: "Stock agent", icon: "stock", back: "today" }];
@@ -56,9 +57,10 @@ function go(t) { tab = t; location.hash = t; render(); window.scrollTo(0, 0); }
 async function render() {
   if (!SECTION(tab)) tab = "today";
   $("title").textContent = SECTION(tab).label;
-  const sub = SUB.find((x) => x.id === tab);
+  const sub = SUB.find((x) => x.id === tab) || (MORE.some((m) => m.id === tab) ? { back: "more" } : null);
   $("back").hidden = !sub;
   $("back").onclick = () => go(sub.back);
+  $("back").setAttribute("aria-label", sub?.back === "more" ? "Back to More" : "Back to Today");
   document.body.classList.toggle("has-hero", ["today", "forecast", "evaluation"].includes(tab));
   renderTabs();
   const view = $("view");
@@ -153,8 +155,19 @@ function stockList() {
 }
 
 const VIEWS = {
+  async devices() {
+    const devs = await api("/api/devices");
+    return `<div class="section first"><div class="panel">
+        <div class="muted" style="font-size:14px;margin-bottom:8px">The cashier account only works on iPads paired here.</div>
+        ${devs.map((d) => `<div class="list-item"><span>${esc(d.name)}<br><span class="muted">${d.paired ? "Paired" : "Waiting for code"}</span></span><button class="secondary-btn" data-revoke="${d.id}">Remove</button></div>`).join("") || '<div class="muted">No cashier iPad yet.</div>'}
+        <div id="pair-out"></div>
+        <div class="btns" style="display:flex;gap:8px;margin-top:12px"><button class="pair-btn" id="pair-new">Pair a cashier iPad</button></div>
+      </div></div>`;
+  },
+
   async more() {
-    return `<div class="section"><div class="panel">${MORE.map((m) => `<button class="more-row" data-go="${m.id}"><span class="ic">${ICONS[m.icon]}</span><span><b>${m.label}</b><br><span class="muted">${m.sub}</span></span>${ICONS.chevron}</button>`).join("")}</div></div>`;
+    return `<div class="section"><div class="panel">${MORE.map((m) => `<button class="more-row" data-go="${m.id}"><span class="ic">${ICONS[m.icon]}</span><span><b>${m.label}</b><br><span class="muted">${m.sub}</span></span>${ICONS.chevron}</button>`).join("")}</div></div>
+      <div class="section"><div class="panel"><button class="more-row signout" id="logout"><span class="ic">${ICONS.logout}</span><span><b>Sign out</b><br><span class="muted">Signed in as the manager</span></span></button></div></div>`;
   },
 
   async staff() {
@@ -342,7 +355,7 @@ const VIEWS = {
   },
 
   async today() {
-    const [t, ins, runs, devs, ov, pos] = await Promise.all([api("/api/today"), api("/api/insights/cashier"), api("/api/agents/runs"), api("/api/devices"), api("/api/overview"), api("/api/purchase-orders")]);
+    const [t, ins, runs, ov, pos] = await Promise.all([api("/api/today"), api("/api/insights/cashier"), api("/api/agents/runs"), api("/api/overview"), api("/api/purchase-orders")]);
     const drafts = pos.filter((p) => p.status === "draft");
     const brief = runs.find((r) => r.agent === "overview");
     const rate = ins.acceptance_rate == null ? "–" : `${Math.round(ins.acceptance_rate * 100)}%`;
@@ -377,12 +390,7 @@ const VIEWS = {
         <div class="hc-rev"><span>Extra sales from the helper</span><b class="num">${sar(ins.added_revenue)}</b></div>
         ${ins.top_accepted.length ? `<div class="hc-items"><span class="lbl">Added most often</span><div class="hc-chips">${ins.top_accepted.map((x) => `<span class="hc-chip">${esc(x.name)}<b class="num">${x.count}×</b></span>`).join("")}</div></div>` : ""}
       </div></div>
-      <div class="section"><h2>Cashier devices</h2><div class="panel">
-        <div class="muted" style="font-size:14px;margin-bottom:8px">The cashier account only works on devices paired here.</div>
-        ${devs.map((d) => `<div class="list-item"><span>${esc(d.name)}<br><span class="muted">${d.paired ? "Paired" : "Waiting for code"}</span></span><button class="secondary-btn" data-revoke="${d.id}">Remove</button></div>`).join("") || '<div class="muted">No cashier device yet.</div>'}
-        <div id="pair-out"></div>
-        <div class="btns" style="display:flex;gap:8px;margin-top:12px"><button class="pair-btn" id="pair-new">Pair a cashier iPad</button><button class="secondary-btn" id="logout">Sign out</button></div>
-      </div></div>`;
+`;
   },
 
   async sales() {
@@ -568,6 +576,14 @@ const BIND = {
   },
   more() {
     document.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
+    $("logout").onclick = async () => { await api("/api/auth/logout", { method: "POST" }); location.href = "/login"; };
+  },
+  devices() {
+    $("pair-new").onclick = async () => {
+      const r = await api("/api/devices", { method: "POST", body: JSON.stringify({ name: "Cashier iPad" }) });
+      $("pair-out").innerHTML = `<div style="margin-top:12px"><div class="code num">${r.code}</div><div class="muted" style="font-size:13px;margin-top:8px;text-align:center">On the iPad, open Restaura, tap "Pair as cashier iPad" and enter this code. It expires in ${r.minutes} minutes.</div></div>`;
+    };
+    document.querySelectorAll("[data-revoke]").forEach((b) => (b.onclick = async () => { await api(`/api/devices/${b.dataset.revoke}/revoke`, { method: "POST" }); toast("Device removed"); render(); }));
   },
   staff() {
     const w = window._st;
@@ -641,12 +657,6 @@ const BIND = {
       ev.target.disabled = true; ev.target.textContent = "Reading every section…";
       try { await api("/api/agents/overview/run", { method: "POST" }); render(); } catch (e) { toast(e.message, true); ev.target.disabled = false; }
     };
-    $("logout").onclick = async () => { await api("/api/auth/logout", { method: "POST" }); location.href = "/login"; };
-    $("pair-new").onclick = async () => {
-      const r = await api("/api/devices", { method: "POST", body: JSON.stringify({ name: "Cashier iPad" }) });
-      $("pair-out").innerHTML = `<div style="margin-top:12px"><div class="code num">${r.code}</div><div class="muted" style="font-size:13px;margin-top:8px;text-align:center">On the iPad, open Restaura, tap "Pair as cashier iPad" and enter this code. It expires in ${r.minutes} minutes.</div></div>`;
-    };
-    document.querySelectorAll("[data-revoke]").forEach((b) => (b.onclick = async () => { await api(`/api/devices/${b.dataset.revoke}/revoke`, { method: "POST" }); toast("Device removed"); render(); }));
   },
   stock() {
     bindAgent();
