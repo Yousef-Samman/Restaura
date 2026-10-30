@@ -35,3 +35,16 @@ def test_revoking_device_signs_cashier_out(client, ipad):
     dev = client.get("/api/devices").json()[0]
     client.post(f"/api/devices/{dev['id']}/revoke")
     assert ipad.get("/api/menu").status_code == 401
+
+
+def test_staff_pin_sign_in_only_on_paired_ipad(app, client, anon):
+    assert anon.get("/api/auth/staff").status_code == 403
+    code = client.post("/api/devices", json={"name": "iPad"}).json()["code"]
+    assert anon.post("/api/devices/pair", json={"code": code}).status_code == 200
+    staff = anon.get("/api/auth/staff").json()
+    sara = next(m for m in staff if m["name"] == "Sara")
+    assert anon.post("/api/auth/staff-login", json={"staff_id": sara["id"], "pin": "9999"}).status_code == 401
+    r = anon.post("/api/auth/staff-login", json={"staff_id": sara["id"], "pin": "1111"})
+    assert r.status_code == 200 and r.json()["home"] == "/cashier"
+    assert anon.get("/api/auth/me").json()["user"]["name"] == "Sara"
+    assert anon.get("/api/menu").status_code == 200

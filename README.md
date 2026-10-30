@@ -2,7 +2,7 @@
 
 <img src="assets/restaura-icon-rounded-224.png" alt="Restaura logo" width="112">
 
-# RESTAVRA
+# Restaura
 
 *Latin* **restaurare**, "to restore". Written Restaura in code and docs.
 
@@ -180,7 +180,7 @@ No keys or `.env` files are committed to this repository. The API key is supplie
 
 <img src="assets/restaura-icon-rounded-224.png" alt="" width="72" align="left">
 
-The mark is a serving cloche, the dome a restaurant lifts to present a dish, with a small AI spark. The wordmark is written in Roman capitals (RESTAVRA, the Latin spelling) with MMXXVI below it. Ivory `#FBFAF2` · Olive `#667A3E` · Brass `#B8923F` · Ink `#2E3A1C`, set in Josefin Sans. Files and rules are in [docs/BRAND.md](docs/BRAND.md).
+The mark is a serving cloche, the dome a restaurant lifts to present a dish, with a small AI spark. The wordmark is RESTAURA in capitals with MMXXVI (2026) below it, like a Roman plaque. Ivory `#FBFAF2` · Olive `#667A3E` · Brass `#B8923F` · Ink `#2E3A1C`, set in Josefin Sans. Files and rules are in [docs/BRAND.md](docs/BRAND.md).
 
 <br clear="left">
 

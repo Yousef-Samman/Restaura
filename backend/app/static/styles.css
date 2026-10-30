@@ -697,3 +697,89 @@ body.has-hero .mgr-top { padding-bottom: 10px; }
 .rail .cat[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--brass); }
 .stk.coming .sd { background: var(--brass); }
 .chip.sent { background: var(--brass-tint); color: var(--brass-text); }
+
+/* ---- Feedback round 3 ---- */
+/* logo: the SVG already draws the rounded tile and its border, so its frame adds nothing */
+.brandmark .tile, .auth .brand .mark, .rail .logo { background: none; border-radius: 0; box-shadow: none; overflow: visible; padding: 0; width: auto; height: auto; }
+.brandmark .tile img { width: 40px; height: 40px; }
+.auth .brand .mark img { width: 60px; height: 60px; }
+.rail .logo img { width: 56px; height: 56px; }
+
+/* sign in: wordmark and staff PIN sign-in */
+.wordmark { display: inline-flex; flex-direction: column; gap: 3px; font-family: "Josefin Sans", "Manrope", Arial, sans-serif; font-weight: 600; font-size: 24px; letter-spacing: .14em; color: var(--ink); line-height: 1; position: relative; top: 3px; }
+.wordmark small { font-family: Georgia, serif; font-weight: 400; font-size: 9px; letter-spacing: .4em; color: var(--brass); border-top: 1px solid var(--brass); padding-top: 3px; }
+.auth .tag { margin-top: 8px; }
+.who-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.who-grid button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border-radius: 12px; background: var(--cloud); border: 1.5px solid transparent; text-align: left; }
+.who-grid button b { font-size: 15px; } .who-grid button small { font-size: 12px; color: var(--muted); }
+.who-grid button[aria-pressed="true"] { background: var(--brass-tint); border-color: var(--brass); }
+#pinbox { display: flex; flex-direction: column; gap: 10px; text-align: center; }
+.linkish { font-weight: 700; text-decoration: underline; text-underline-offset: 3px; align-self: center; }
+.who-line { font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+
+/* cashier: step bar, panes, suggestions, payment */
+.steps-bar { display: flex; gap: 6px; padding: 0 22px 10px; }
+.steps-bar span { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: var(--muted); padding: 7px 8px; border-radius: 10px; background: var(--cloud); }
+.steps-bar i { font-style: normal; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--paper); font-size: 11px; flex: none; }
+.steps-bar .now { background: var(--brass-tint); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--brass); }
+.steps-bar .now i { background: var(--brass); color: var(--ink); }
+.steps-bar .done { color: var(--ok); } .steps-bar .done i { background: var(--ok); color: #fff; }
+.pane { flex: 1; min-height: 0; overflow-y: auto; padding: 0 22px; display: flex; flex-direction: column; }
+.pane .lines { padding: 0; margin: 0; }
+.pane .empty-order { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.pane .empty-order svg { width: 36px; height: 36px; }
+.actions .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.actions .btn svg { width: 18px; height: 18px; }
+.actions .btn.solid { flex: 2; } .actions .btn.wide { flex: 1; }
+.sg { display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px; }
+.sg-h { display: flex; gap: 10px; align-items: flex-start; }
+.sg-h svg { width: 20px; height: 20px; color: var(--brass); flex: none; margin-top: 2px; }
+.sg-h b { display: block; font-size: 16px; } .sg-h small { color: var(--muted); font-size: 13px; }
+.sg-card { border: 1.5px solid var(--line); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 8px; background: var(--paper); }
+.sg-card.added { border-color: var(--ok); background: var(--ok-bg); }
+.sg-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.sg-top b { font-size: 17px; } .sg-top span { font-weight: 800; color: var(--brass-text); }
+.sg-card p { margin: 0; font-size: 15px; line-height: 1.4; }
+.sg-add { height: 44px; border-radius: 12px; background: var(--brass); color: var(--ink); font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.sg-add svg { width: 16px; height: 16px; }
+.sg-add:disabled { background: transparent; color: var(--ok); cursor: default; }
+.sg-list { display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; color: var(--muted); }
+.sg-list .lbl { width: 100%; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
+.sg-list span:not(.lbl) { background: var(--cloud); border-radius: 999px; padding: 4px 10px; }
+.pay, .cash { display: flex; flex-direction: column; gap: 10px; }
+.pay-h { font-size: 16px; font-weight: 800; }
+.pay-opt { display: grid; grid-template-columns: 48px minmax(0, 1fr) 18px; gap: 12px; align-items: center; padding: 16px; border-radius: 16px; border: 1.5px solid var(--line); background: var(--paper); text-align: left; }
+.pay-opt:hover { border-color: var(--brass); background: var(--brass-tint); }
+.pay-opt .pi { width: 48px; height: 48px; border-radius: 14px; background: var(--brass-tint); color: var(--brass-text); display: grid; place-items: center; }
+.pay-opt .pi svg { width: 26px; height: 26px; }
+.pay-opt b { display: block; font-size: 17px; } .pay-opt small { color: var(--muted); font-size: 13px; }
+.pay-opt > svg { width: 18px; height: 18px; color: var(--muted); }
+.cash-in { font-size: 34px; font-weight: 800; text-align: center; padding: 8px; border-radius: 14px; background: var(--cloud); }
+.cash-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.cash-quick button { height: 40px; border-radius: 10px; border: 1.5px solid var(--brass-line); background: var(--brass-tint); font-weight: 800; }
+.cash-keys button { height: 48px; font-size: 20px; }
+.change { text-align: center; font-weight: 700; color: var(--muted); padding: 8px; border-radius: 12px; }
+.change.ok { background: var(--ok-bg); color: var(--ok); } .change b { font-size: 20px; }
+.pane .paid { margin: auto 0; }
+
+/* NearPay tap-to-pay screen */
+.tap { position: fixed; inset: 0; z-index: 60; background: rgba(46,58,28,.55); display: grid; place-items: center; padding: 20px; }
+.tap-card { width: min(420px, 100%); background: var(--paper); border-radius: 28px; padding: 22px 24px 24px; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; box-shadow: var(--shadow-lift); }
+.tap-top { width: 100%; display: flex; justify-content: space-between; align-items: center; }
+.tap-brand { font-weight: 800; font-size: 13px; letter-spacing: .04em; color: var(--brass-text); }
+.tap-x { font-weight: 700; color: var(--muted); }
+.tap-dots { display: flex; gap: 8px; }
+.tap-dots i { width: 14px; height: 14px; border-radius: 50%; background: var(--line); transition: background .2s; }
+.tap-dots i.on { background: var(--brand-2); }
+.tap-ring { width: 150px; height: 150px; border-radius: 50%; display: grid; place-items: center; color: var(--brand); background: radial-gradient(circle, var(--brand-soft) 55%, transparent 56%); position: relative; }
+.tap-ring::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 3px solid var(--brass); opacity: .5; animation: tapPulse 1.6s ease-out infinite; }
+.tap-ring svg { width: 74px; height: 74px; }
+@keyframes tapPulse { from { transform: scale(.75); opacity: .7; } to { transform: scale(1.1); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tap-ring::after { animation: none; } }
+.tap-say b { display: block; font-size: 19px; } .tap-say span { font-family: "Noto Sans Arabic", sans-serif; color: var(--muted); font-size: 15px; }
+.tap-amt { font-size: 32px; font-weight: 800; }
+.tap-ar { font-family: "Noto Sans Arabic", sans-serif; color: var(--muted); margin-top: -10px; }
+.tap-card .btn.solid { width: 100%; }
+.tap.ok .tap-ring { background: radial-gradient(circle, var(--ok-bg) 55%, transparent 56%); color: var(--ok); }
+.tap.ok .tap-ring::after { animation: none; opacity: 0; }
+.actions .btn.wide, .actions > .wide { grid-column: 1 / -1; }

@@ -88,6 +88,11 @@ class Login(BaseModel):
     password: str
 
 
+class StaffLogin(BaseModel):
+    staff_id: int
+    pin: str = Field(pattern=r"^\d{4}$")
+
+
 class PairStart(BaseModel):
     name: str = Field("Cashier iPad", min_length=1, max_length=120)
 
@@ -140,6 +145,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         token, user = auth.login(db, body.username, body.password, request.cookies.get(auth.DEVICE_COOKIE))
         response.set_cookie(auth.SESSION_COOKIE, token, max_age=auth.SESSION_HOURS * 3600, **cookie)
         return {"name": user.name, "role": user.role, "home": "/cashier" if user.role == "cashier" else "/manager"}
+
+    @app.get("/api/auth/staff")
+    def staff_names(request: Request, db: Session = Depends(get_db)):
+        """Names for the sign-in screen, only on the paired cashier iPad."""
+        if not auth.device_from_cookie(db, request.cookies.get(auth.DEVICE_COOKIE)):
+            raise HTTPException(403, "This device is not the store's cashier iPad")
+        return [{"id": m.id, "name": m.name, "role": m.role}
+                for m in db.scalars(select(StaffMember).where(StaffMember.active).order_by(StaffMember.name))]
+
+    @app.post("/api/auth/staff-login")
+    def do_staff_login(body: StaffLogin, request: Request, response: Response, db: Session = Depends(get_db)):
+        token, user = auth.staff_login(db, body.staff_id, body.pin, request.cookies.get(auth.DEVICE_COOKIE))
+        response.set_cookie(auth.SESSION_COOKIE, token, max_age=auth.SESSION_HOURS * 3600, **cookie)
+        return {"name": user.name, "role": user.role, "home": "/cashier"}
 
     @app.post("/api/auth/logout")
     def do_logout(request: Request, response: Response, db: Session = Depends(get_db)):
