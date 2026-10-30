@@ -102,6 +102,7 @@ class PurchaseOrder(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft | sent | received | rejected
     note: Mapped[str | None] = mapped_column(Text)
     sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
+    sent_via: Mapped[str | None] = mapped_column(String(10))  # email | whatsapp, picked by the manager when approving
     supplier: Mapped[Supplier] = relationship()
     lines: Mapped[list["PurchaseOrderLine"]] = relationship(cascade="all, delete-orphan")
 
@@ -126,6 +127,7 @@ class Outbox(Base):
     body: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20))  # sent | logged | failed
     error: Mapped[str | None] = mapped_column(Text)
+    html: Mapped[str | None] = mapped_column(Text)  # the branded version, when there is one
 
 
 class AgentRun(Base):

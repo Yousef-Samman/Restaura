@@ -11,7 +11,7 @@ const TABS = [
 ];
 // sections reached from the More tab
 const MORE = [
-  { id: "deliveries", label: "Deliveries", icon: "delivery", sub: "Invoice photos, manual deliveries, POS upload" },
+  { id: "deliveries", label: "Deliveries", icon: "delivery", sub: "Invoice photos and manual deliveries" },
   { id: "forecast", label: "Forecast", icon: "sales", sub: "Next 7 days, tomorrow's prep, ingredients needed" },
   { id: "expenses", label: "Expenses", icon: "wallet", sub: "Costs and estimated profit" },
   { id: "routines", label: "Routines", icon: "check", sub: "Opening, mid-shift and closing checklists" },
@@ -421,6 +421,7 @@ const VIEWS = {
 
   async orders() {
     const [pos, runs] = await Promise.all([api("/api/purchase-orders"), api("/api/agents/runs")]);
+    window._pos = Object.fromEntries(pos.map((p) => [p.id, p]));
     const run = runs.find((r) => r.agent === "stock");
     if (!pos.length) return `<div class="section">${agentCard(run)}</div><div class="section panel empty">No supplier orders yet.</div>`;
     const dayOf = (iso, o = { weekday: "short", day: "numeric", month: "short" }) => new Date(iso.length === 10 ? iso + "T00:00" : iso + "Z").toLocaleDateString("en-GB", o);
@@ -466,9 +467,9 @@ const VIEWS = {
             return `<div class="ln"><span class="n">${esc(l.ingredient)}</span><span class="q"><b class="num">${fmt(r)}</b> of ${fmt(l.qty)} ${l.unit}${short ? ' <span class="chip low">Short</span>' : ""}</span></div>`; }).join("")
           : po.lines.map((l) => lineHtml(l, draft)).join("")}
         ${draft ? `<div class="row"><button class="brass approve">Approve and send</button><button class="reject">Reject</button></div>
-          <p class="after">${po.channel === "whatsapp" ? "After you approve, a Send on WhatsApp button appears with the order typed in for the supplier." : "After you approve, the order is emailed to the supplier."} It then waits here under <b>On the way</b> until you confirm the delivery.</p>` : ""}
+          <p class="after">When you approve, you choose to send it by email or on WhatsApp. It then waits here under <b>On the way</b> until you confirm the delivery.</p>` : ""}
         ${po.status === "sent" ? `<div class="sent-how">${po.channel === "whatsapp" ? "Order written for WhatsApp" : "Order emailed to the supplier"}${po.sent_at ? ` · ${dayOf(po.sent_at)}` : ""}</div>
-          <div class="btns">${po.whatsapp_link ? `<a class="wa" href="${esc(po.whatsapp_link)}" target="_blank" rel="noopener">${ICONS.whatsapp}Send on WhatsApp</a>` : ""}<button class="brass open-receive">Confirm delivery</button></div>
+          <div class="btns">${po.whatsapp_link ? `<a class="wa" href="${esc(po.whatsapp_link)}" target="_blank" rel="noopener" data-wa>${ICONS.whatsapp}Send on WhatsApp</a>` : ""}<button class="brass open-receive">Confirm delivery</button></div>
           <div class="receive-form" hidden>
             <p class="muted">Enter what really arrived. Change a number if the supplier sent less or more.</p>
             ${po.lines.map((l) => `<label class="rf-line"><span>${esc(l.ingredient)}</span><span class="q"><input class="qty num" type="number" min="0" step="any" value="${l.qty}" data-ing="${l.ingredient_id}" aria-label="Received ${esc(l.ingredient)}"><span class="u">${l.unit}</span></span></label>`).join("")}
@@ -533,13 +534,92 @@ const VIEWS = {
         <label class="field">Invoice number (optional)<input id="d-ref" type="text"></label>
         <button class="solid" id="d-save">Add to stock</button>
       </div></div>
-      <div class="section"><h2>POS daily report</h2><div class="panel form">
-        <div class="muted" style="font-size:14px">Upload the day's sales as CSV with columns <b>item,qty</b> if the POS is not connected.</div>
-        <label class="field">CSV file<input id="pos" type="file" accept=".csv,text/csv"></label>
-      </div></div>
       <div class="section"><h2>Messages to suppliers</h2><div class="panel">${mails.length ? mails.slice(0, 8).map((m) => `<div class="list-item"><span>${esc(m.subject)}<br><span class="muted">${esc(m.to)}</span></span><span class="chip ${m.status === "sent" ? "received" : m.status === "failed" ? "negative" : "draft"}">${m.status === "link" ? "WhatsApp" : m.status}</span></div>`).join("") : '<div class="muted">No emails yet.</div>'}</div></div>`;
   },
 };
+
+// ---- approve and send: choose email or WhatsApp, then watch it go -------------------------------------------
+const MAIL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/></svg>';
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function sendSheet(po, edits) {
+  const bg = document.createElement("div");
+  bg.className = "send-bg";
+  bg.innerHTML = `<div class="send-sheet" role="dialog" aria-modal="true" aria-labelledby="ss-title"><div class="grab"></div><div id="ss-body"></div></div>`;
+  document.body.append(bg);
+  const body = bg.querySelector("#ss-body");
+  const close = () => { bg.remove(); render(); };
+  let busy = false;
+  bg.addEventListener("click", (e) => { if (e.target === bg && !busy) bg.remove(); });
+  const items = po.lines.length, cost = po.lines.reduce((s, l) => s + l.est_cost, 0);
+  const options = [
+    { via: "email", icon: MAIL_ICON, label: "Email", detail: po.supplier_email ? `${po.supplier_email} · with your logo` : "No email address for this supplier", ok: !!po.supplier_email },
+    { via: "whatsapp", icon: ICONS.whatsapp, label: "WhatsApp", detail: po.supplier_whatsapp ? `+${po.supplier_whatsapp} · opens WhatsApp with the order typed in` : "No WhatsApp number for this supplier", ok: !!po.supplier_whatsapp },
+  ];
+  let pick = options.find((o) => o.via === po.channel && o.ok) || options.find((o) => o.ok);
+
+  const choose = () => {
+    body.innerHTML = `<h3 id="ss-title">Send order #${po.id} to ${esc(po.supplier)}</h3>
+      <div class="ss-sub">${items} ${items === 1 ? "item" : "items"} · est. ${sar(cost)} · approving sends it now</div>
+      ${options.map((o) => `<button type="button" class="ss-opt" data-via="${o.via}" aria-pressed="${o === pick}" ${o.ok ? "" : "disabled"}>
+        <span class="ic">${o.icon}</span><span><b>${o.label}</b><small>${esc(o.detail)}</small></span><span class="radio"></span></button>`).join("")}
+      <button type="button" class="ss-go" id="ss-go" ${pick ? "" : "disabled"}>${pick ? `Approve and send ${pick.via === "email" ? "by email" : "on WhatsApp"}` : "Add an email or WhatsApp number first"}</button>
+      <button type="button" class="ss-cancel" id="ss-cancel">Cancel</button>`;
+    body.querySelectorAll(".ss-opt").forEach((b) => (b.onclick = () => { pick = options.find((o) => o.via === b.dataset.via); choose(); }));
+    $("ss-cancel").onclick = () => bg.remove();
+    $("ss-go").onclick = () => (pick.via === "email" ? sendEmail() : sendWhatsApp());
+  };
+
+  const approve = (via) => api(`/api/purchase-orders/${po.id}/approve?via=${via}`, { method: "POST", body: JSON.stringify(edits) });
+
+  const sendWhatsApp = async () => {
+    busy = true;
+    try {
+      const r = await approve("whatsapp");
+      body.innerHTML = `<div class="ss-done"><span class="tick wa">${ICONS.whatsapp}</span><b>Order ready for WhatsApp</b>
+        <span>Order #${po.id} is approved. Open WhatsApp and press send in the chat with ${esc(po.supplier)}</span></div>
+        <div class="ss-row"><button type="button" class="ghost" id="ss-close">Close</button><a class="ss-go" id="ss-wa" href="${esc(r.whatsapp_link)}" target="_blank" rel="noopener">Open WhatsApp</a></div>`;
+      $("ss-wa").onclick = () => setTimeout(() => { $("ss-wa").textContent = "Opened in WhatsApp"; $("ss-wa").classList.add("opened"); }, 50);
+      $("ss-close").onclick = close;
+    } catch (e) { busy = false; toast(e.message, true); choose(); }
+  };
+
+  const sendEmail = async () => {
+    busy = true;
+    const server = status.mail_server ? (status.mail_server.includes("gmail") ? "Gmail" : status.mail_server) : null;
+    const steps = [
+      ["Order approved", `${items} ${items === 1 ? "item" : "items"} locked in`],
+      ["Email written", "Branded order with your logo and the item list"],
+      [server ? `Sending through ${server}` : "Sending", server ? `Connecting to ${status.mail_server}…` : "Handing the email to the app"],
+      ["Delivered", "Waiting for the mail server to accept it"],
+    ];
+    const draw = (at, pct) => {
+      body.innerHTML = `<h3 id="ss-title">Sending order #${po.id}</h3><div class="ss-sub">To ${esc(po.supplier)} by email</div>
+        <div class="ss-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
+        <div class="ss-steps">${steps.map(([t, d], i) => `<div class="ss-st ${i < at ? "done" : i === at ? "now" : "wait"}"><span class="dot">${i < at ? ICONS.check : ""}</span><span><b>${t}</b><small>${d}</small></span></div>`).join("")}</div>`;
+    };
+    draw(0, 8);
+    // the request does the real work; the steps advance while it runs and the last one shows what the server said
+    const req = approve("email").then((r) => ({ r }), (e) => ({ e }));
+    await wait(450); draw(1, 34);
+    await wait(550); draw(2, 62);
+    const [{ r, e }] = await Promise.all([req, wait(700)]);
+    if (e) { busy = false; toast(e.message, true); return choose(); }
+    draw(3, 90); await wait(350);
+    const m = r.email;
+    const at = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const view = m.id ? `<a class="ghost" href="/api/outbox/${m.id}/html" target="_blank" rel="noopener">See the email</a>` : "";
+    const done = (cls, icon, title, text) => {
+      body.innerHTML = `<div class="ss-done"><span class="tick ${cls}">${icon}</span><b>${title}</b><span>${text}</span></div>
+        <div class="ss-row">${view || '<span></span>'}<button type="button" class="ss-go" id="ss-close">Done</button></div>`;
+      $("ss-close").onclick = close;
+    };
+    if (m.status === "sent") done("", ICONS.check, "Email sent", `Order #${po.id} went to ${esc(m.to)} at ${at}.<br>It now waits under On the way until it arrives.`);
+    else if (m.status === "logged") done("warn", ICONS.bang, "Saved, not sent", `Email isn't set up on this server, so order #${po.id} was approved and saved, but nothing left the app. Set SMTP_HOST to send for real.`);
+    else done("bad", ICONS.bang, "Approved, but the email failed", `The mail server said: ${esc((m.error || "unknown error").slice(0, 160))}. The order is approved. Check the email settings, or call or message the supplier.`);
+  };
+  choose();
+}
 
 function bindAgent() {
   const b = $("run-agent");
@@ -687,13 +767,14 @@ const BIND = {
     }));
     document.querySelectorAll(".po").forEach((el) => {
       const id = el.dataset.id;
-      el.querySelector(".approve:not(.receive)")?.addEventListener("click", async (ev) => {
-        ev.target.disabled = true;
+      el.querySelector(".approve:not(.receive)")?.addEventListener("click", () => {
         const edits = [...el.querySelectorAll("input.qty")].map((i) => ({ line_id: +i.dataset.line, qty: parseFloat(i.value) || 0 }));
-        try { const r = await api(`/api/purchase-orders/${id}/approve`, { method: "POST", body: JSON.stringify(edits) });
-          if (r.whatsapp_link) { toast("Approved. Tap Send on WhatsApp to message the supplier."); render(); return; }
-          toast(r.email.status === "sent" ? `Sent to ${r.email.to}` : r.email.status === "logged" ? "Approved. Email logged (no mail server set)" : `Approved, but email failed: ${r.email.error}`, r.email.status === "failed"); render(); }
-        catch (e) { toast(e.message, true); ev.target.disabled = false; }
+        sendSheet(window._pos[id], edits);
+      });
+      // WhatsApp keeps an unsent draft in the chat, so a second tap would add the order again after the first
+      el.querySelector("[data-wa]")?.addEventListener("click", (ev) => {
+        const a = ev.currentTarget;
+        setTimeout(() => { a.innerHTML = `${ICONS.check}Opened in WhatsApp`; a.classList.add("opened"); a.title = "Tap again only if you cleared the old draft in the chat"; }, 50);
       });
       el.querySelector(".reject")?.addEventListener("click", async () => { await api(`/api/purchase-orders/${id}/reject`, { method: "POST" }); toast("Order rejected"); render(); });
       const form = el.querySelector(".receive-form");
@@ -715,11 +796,6 @@ const BIND = {
       if (!(qty > 0)) return toast("Enter the quantity received", true);
       await api("/api/deliveries", { method: "POST", body: JSON.stringify({ lines: [{ ingredient_id: +$("d-ing").value, qty }], invoice_ref: $("d-ref").value || null }) });
       toast("Added to stock"); render();
-    };
-    $("pos").onchange = async (e) => {
-      const fd = new FormData(); fd.append("file", e.target.files[0]);
-      try { const r = await api("/api/sales/import", { method: "POST", body: fd }); toast(`Imported ${r.lines} lines · ${sar(r.total)}`); }
-      catch (err) { toast(err.message, true); }
     };
     $("inv").onchange = async (e) => {
       const out = $("inv-out");

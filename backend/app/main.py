@@ -3,8 +3,8 @@ import json
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, object_session, selectinload
 
 from . import auth, evaluation, finance, forecast, mailer, routines, sales_report, staff as staffing, stock
 from . import nightly
+from .email_template import HEADER_CID, order_email_html
 from .agents import cashier, invoice, overview, stock_agent
 from .agents.stock_agent import split_change
 from .agents.llm import LLM
@@ -213,7 +214,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/status")
     def status():
         return {"store": settings.store_name, "ai_enabled": llm.enabled, "model": settings.model if llm.enabled else None,
-                "email": "smtp" if settings.smtp_host else "log only"}
+                "email": "smtp" if settings.smtp_host else "log only", "mail_server": settings.smtp_host}
 
     # ---- cashier -----------------------------------------------------------
     @app.get("/api/menu")
@@ -468,12 +469,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                          + [f"- {l.ingredient.name}: {l.qty:g} {l.ingredient.unit}" for l in po.lines]
                          + ["", f"Purchase order #{po.id}. Thank you.", settings.store_name])
 
+    def whatsapp_number(po: PurchaseOrder) -> str | None:
+        return settings.demo_supplier_whatsapp or po.supplier.phone or None
+
+    def via(po: PurchaseOrder) -> str:
+        return po.sent_via or po.supplier.channel
+
     def whatsapp_link(po: PurchaseOrder) -> str | None:
         """Click-to-chat link with the order typed in; the manager presses send in WhatsApp."""
-        number = settings.demo_supplier_whatsapp or po.supplier.phone
-        if po.supplier.channel != "whatsapp" or not number:
+        number = whatsapp_number(po)
+        if via(po) != "whatsapp" or not number:
             return None
         return f"https://wa.me/{''.join(c for c in number if c.isdigit())}?text={quote(order_text(po))}"
+
+    def order_html(po: PurchaseOrder) -> str:
+        sent = po.sent_at or dt.datetime.now(dt.UTC).replace(tzinfo=None)
+        deliver_by = (sent + dt.timedelta(days=po.supplier.lead_days)).date()
+        return order_email_html(store=settings.store_name, supplier=po.supplier.name, po_id=po.id,
+                                lines=[(l.ingredient.name, l.qty, l.ingredient.unit) for l in po.lines],
+                                deliver_by=deliver_by, sent_at=sent + STORE_UTC_OFFSET)
 
     def po_ref(po: PurchaseOrder) -> str:
         return f"PO {po.id}"
@@ -495,7 +509,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         expected = (po.sent_at + dt.timedelta(days=po.supplier.lead_days)).date().isoformat() if po.sent_at else None
         return {"id": po.id, "supplier": po.supplier.name, "status": po.status, "note": po.note,
                 "expected": expected, "delivery": po_delivery(po),
-                "channel": po.supplier.channel, "whatsapp_link": whatsapp_link(po) if po.status == "sent" else None,
+                "channel": via(po), "supplier_email": settings.demo_supplier_email or po.supplier.email, "supplier_whatsapp": whatsapp_number(po),
+                "whatsapp_link": whatsapp_link(po) if po.status == "sent" else None,
                 "created_at": po.created_at.isoformat(), "sent_at": po.sent_at.isoformat() if po.sent_at else None,
                 "lead_days": po.supplier.lead_days, "changed": any(split_change(l.reason)[1] for l in po.lines),
                 "lines": [{"id": l.id, "ingredient_id": l.ingredient_id, "ingredient": l.ingredient.name,
@@ -514,10 +529,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return [po_dict(po) for po in db.scalars(select(PurchaseOrder).order_by(PurchaseOrder.id.desc()))]
 
     @app.post("/api/purchase-orders/{po_id}/approve")
-    def approve(po_id: int, edits: list[EditLine] | None = None, db: Session = Depends(get_db), _=Depends(manager_only)):
+    def approve(po_id: int, edits: list[EditLine] | None = None, via_: str | None = Query(None, alias="via", pattern="^(email|whatsapp)$"),
+                db: Session = Depends(get_db), _=Depends(manager_only)):
+        """Approve a draft and send it the way the manager picked (email or WhatsApp); without a pick, the
+        supplier's usual way."""
         po = get_po(db, po_id)
         if po.status != "draft":
             raise HTTPException(409, f"Order is already {po.status}")
+        channel = via_ or po.supplier.channel
+        if channel == "whatsapp" and not whatsapp_number(po):
+            raise HTTPException(400, f"{po.supplier.name} has no WhatsApp number. Add one under More › Suppliers, or send by email.")
+        if channel == "email" and not (settings.demo_supplier_email or po.supplier.email):
+            raise HTTPException(400, f"{po.supplier.name} has no email address. Add one under More › Suppliers, or send on WhatsApp.")
         for e in edits or []:
             line = db.get(PurchaseOrderLine, e.line_id)
             if not line or line.purchase_order_id != po.id:
@@ -530,15 +553,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db.refresh(po)
         if not po.lines:
             raise HTTPException(400, "Order has no lines left")
-        po.status, po.sent_at = "sent", dt.datetime.now(dt.UTC).replace(tzinfo=None)
-        if po.supplier.channel == "whatsapp":
-            to = settings.demo_supplier_whatsapp or po.supplier.phone or ""
+        po.status, po.sent_at, po.sent_via = "sent", dt.datetime.now(dt.UTC).replace(tzinfo=None), channel
+        if channel == "whatsapp":
+            to = whatsapp_number(po) or ""
             db.add(Outbox(to=f"WhatsApp +{to}", subject=f"Purchase order #{po.id} from {settings.store_name}", body=order_text(po), status="link"))
             db.commit()
             return po_dict(po) | {"email": None}
-        mail = mailer.send(db, settings, po.supplier.email or "", f"Purchase order #{po.id} from {settings.store_name}", order_text(po))
+        mail = mailer.send(db, settings, po.supplier.email or "", f"Purchase order #{po.id} from {settings.store_name}",
+                           order_text(po), order_html(po))
         db.commit()
-        return po_dict(po) | {"email": {"to": mail.to, "status": mail.status, "error": mail.error}}
+        return po_dict(po) | {"email": {"id": mail.id, "to": mail.to, "status": mail.status, "error": mail.error}}
 
     @app.post("/api/purchase-orders/{po_id}/reject")
     def reject(po_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
@@ -581,6 +605,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if out is None:
             raise HTTPException(502, "The invoice could not be read. Enter the delivery manually instead.")
         return out
+
+    @app.get("/api/outbox/{mail_id}/html", response_class=HTMLResponse)
+    def outbox_html(mail_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
+        """The branded email as the supplier sees it, with the inline logo pointed at the app's copy."""
+        mail = db.get(Outbox, mail_id)
+        if not mail or not mail.html:
+            raise HTTPException(404, "No branded version of this email")
+        return mail.html.replace(f"cid:{HEADER_CID}", "/static/email-header.png")
 
     @app.get("/api/outbox")
     def outbox(db: Session = Depends(get_db), _=Depends(manager_only)):
