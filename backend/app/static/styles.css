@@ -545,3 +545,12 @@ body.has-hero .mgr-top { padding-bottom: 10px; }
 .card .plus, .card[data-tone="accent"] .plus { background: var(--brass); color: var(--ink); }
 .helper .s + .s { margin-top: 2px; }
 .card .tile::after { background: rgba(255,255,255,.7); }
+
+/* Final brand (Phase 4): ivory tile logo with olive cloche, Roman-capital wordmark */
+.brandmark .tile { background: transparent; width: 38px; height: 38px; border-radius: 11px; }
+.brandmark .tile img { width: 38px; height: 38px; }
+.brandmark .word { display: flex; flex-direction: column; gap: 2px; font-family: "Josefin Sans", "Manrope", Arial, sans-serif; font-weight: 600; font-size: 15px; letter-spacing: .14em; color: #2E3A1C; line-height: 1; position: relative; top: 2px; }
+.brandmark .word small { font-family: Georgia, serif; font-weight: 400; font-size: 7px; letter-spacing: .35em; color: #B8923F; border-top: 1px solid #B8923F; padding-top: 2px; }
+.auth .brand .mark, .rail .logo { background: transparent; padding: 0; overflow: hidden; }
+.auth .brand .mark img { width: 56px; height: 56px; }
+.rail .logo img { width: 52px; height: 52px; display: block; }

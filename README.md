@@ -2,16 +2,20 @@
 
 <img src="assets/restaura-icon-rounded-224.png" alt="Restaura logo" width="112">
 
-# Restaura
+# RESTAVRA
+
+*Latin* **restaurare**, "to restore". Written Restaura in code and docs.
 
 **AI agents that run the two jobs every restaurant forgets to do on a busy day:**<br>
 **sell a little more at the cashier, and never run out of what you sell.**
 
-![Status](https://img.shields.io/badge/status-in%20development-C8A04A?style=for-the-badge&labelColor=0F2E26)
-![Agents](https://img.shields.io/badge/agents-2%20built%20%C2%B7%206%20planned-C8A04A?style=for-the-badge&labelColor=0F2E26)
-![Human approval](https://img.shields.io/badge/manager%20approves-spend%20%26%20changes-C8A04A?style=for-the-badge&labelColor=0F2E26)
+![Status](https://img.shields.io/badge/status-in%20development-B8923F?style=for-the-badge&labelColor=2E3A1C)
+![Tool-using agents](https://img.shields.io/badge/tool--using%20agents-stock%20%C2%B7%20overview-667A3E?style=for-the-badge&labelColor=2E3A1C)
+![Human approval](https://img.shields.io/badge/manager%20approves-spend%20%26%20changes-B8923F?style=for-the-badge&labelColor=2E3A1C)
 
-<img src="assets/restaura-banner.png" alt="Restaura: AI agents for your restaurant" width="100%">
+[The problem](#the-problem) · [The solution](#the-solution) · [Agents](#meet-the-agents) · [Evaluation](#evaluation) · [Run it](#run-it) · [Brand](#brand)
+
+<img src="assets/restaura-banner.png" alt="Restaura: AI agents for the restaurant counter and the stock room" width="100%">
 
 </div>
 
@@ -70,16 +74,34 @@ Works after the branch closes.
 | Receive | Reads a photo of the supplier invoice to log the delivery (manual entry as a fallback) | Agent |
 | Correct | A monthly physical count corrects the estimate | **Manager** |
 
+### How the stock agent decides
+The stock-to-order agent and the manager overview are real tool-using agents. Claude chooses which tool to call next (read the forecast, check stock, adjust a quantity, draft an order, finish), reads each result, and decides the next step. Code keeps ownership of the numbers.
+
+```mermaid
+flowchart LR
+    R[Rules calculate quantities] --> L{Claude picks a tool}
+    L --> T[Tool runs in code and returns facts]
+    T --> L
+    L -- adjust --> W["Change within 0.5x to 1.5x, never below use until delivery, with a reason"]
+    W --> D[Draft order]
+    L -- finish --> D
+    D --> M[Manager reviews: changed lines are marked in orange]
+    L -. no answer or error .-> F[Rules run the same tools in fixed order]
+    F --> D
+```
+
+Every step is saved and shown on the manager's steps page, so the manager can see what the agent looked at and why it changed a number.
+
 ### One shared brain
 Both agents read and write the same database. What the cashier sells drives what the stock agent orders, and what the stock agent knows has run out disappears from the cashier's screen.
 
 ## More of the restaurant
 
-These sections are built and share the same database. The manager overview writes its briefing with Claude when a key is set; the others run on rules today, and the most used ones become Claude agents next.
+These sections are built and share the same database. The manager overview is a tool-using agent when a key is set; the others run on rules today, and the most used ones become Claude agents next.
 
 | Section | What it does |
 | --- | --- |
-| Manager overview | Reads every section and ranks what needs the manager first, with a short briefing |
+| Manager overview | A tool-using agent that reads every section, can start the stock check, and ranks what needs the manager first with a short briefing |
 | Forecast | Next 7 days of sales (recent level adjusted for the weekday, chosen by backtest), tomorrow's prep and which ingredients will run out |
 | Expenses | Monthly and one-off costs, supplier deliveries at cost, and estimated profit |
 | Routines | Opening, mid-shift and closing checklists ticked on the cashier iPad |
@@ -100,7 +122,7 @@ One command runs it all and writes the report; CI runs it on every push.
 ```bash
 cd backend
 pip install -e ".[dev,eval]"
-python -m pytest          # 66 tests: features, robustness, and regression checks on the evaluation
+python -m pytest          # 72 tests: features, robustness, and regression checks on the evaluation
 python -m evals           # held-out evaluation, rules only (no key needed)
 python -m evals --ai      # also the Claude path, with a small model to keep costs low
 ```
@@ -156,7 +178,11 @@ No keys or `.env` files are committed to this repository. The API key is supplie
 
 ## Brand
 
-Emerald `#0F2E26` · Brass `#C8A04A` · Cream `#F5EFE3` · a flat brass cloche. Logo files and usage rules are in [docs/BRAND.md](docs/BRAND.md).
+<img src="assets/restaura-icon-rounded-224.png" alt="" width="72" align="left">
+
+The mark is a serving cloche, the dome a restaurant lifts to present a dish, with a small AI spark. The wordmark is written in Roman capitals (RESTAVRA, the Latin spelling) with MMXXVI below it. Ivory `#FBFAF2` · Olive `#667A3E` · Brass `#B8923F` · Ink `#2E3A1C`, set in Josefin Sans. Files and rules are in [docs/BRAND.md](docs/BRAND.md).
+
+<br clear="left">
 
 ---
 
