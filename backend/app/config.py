@@ -8,7 +8,7 @@ from pathlib import Path
 class Settings:
     database_url: str = field(default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///./restaura.db"))
     anthropic_api_key: str | None = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY") or os.getenv("RESTAURA_ANTHROPIC_API_KEY") or None)
-    model: str = field(default_factory=lambda: os.getenv("RESTAURA_MODEL", "claude-opus-5-5"))
+    model: str = field(default_factory=lambda: os.getenv("RESTAURA_MODEL", "claude-haiku-5-5"))
     # results of `python -m evals`, shown on the manager's Agent evaluation page
     eval_results: Path = field(default_factory=lambda: Path(os.getenv("RESTAURA_EVAL_RESULTS",
                                                                      Path(__file__).resolve().parent.parent / "evals" / "results" / "latest.json")))
