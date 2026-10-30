@@ -1,0 +1,135 @@
+import datetime as dt
+
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .db import Base
+
+
+def now() -> dt.datetime:
+    return dt.datetime.now(dt.UTC).replace(tzinfo=None)
+
+
+class Supplier(Base):
+    __tablename__ = "supplier"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    email: Mapped[str | None] = mapped_column(String(200))
+    lead_days: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class Ingredient(Base):
+    __tablename__ = "ingredient"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    unit: Mapped[str] = mapped_column(String(10))  # g, ml, pcs
+    unit_cost: Mapped[float] = mapped_column(Float)  # SAR per unit
+    min_level: Mapped[float] = mapped_column(Float)  # set by the manager
+    par_level: Mapped[float] = mapped_column(Float)  # target level after a delivery
+    on_hand: Mapped[float] = mapped_column(Float, default=0)
+    supplier_id: Mapped[int] = mapped_column(ForeignKey("supplier.id"))
+    supplier: Mapped[Supplier] = relationship()
+
+
+class MenuItem(Base):
+    __tablename__ = "menu_item"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    category: Mapped[str] = mapped_column(String(60))
+    price: Mapped[float] = mapped_column(Float)
+    is_addon: Mapped[bool] = mapped_column(Boolean, default=False)
+    recipe: Mapped[list["RecipeLine"]] = relationship(back_populates="item", cascade="all, delete-orphan")
+
+
+class RecipeLine(Base):
+    __tablename__ = "recipe_line"
+    menu_item_id: Mapped[int] = mapped_column(ForeignKey("menu_item.id"), primary_key=True)
+    ingredient_id: Mapped[int] = mapped_column(ForeignKey("ingredient.id"), primary_key=True)
+    qty: Mapped[float] = mapped_column(Float)
+    item: Mapped[MenuItem] = relationship(back_populates="recipe")
+    ingredient: Mapped[Ingredient] = relationship()
+
+
+class Order(Base):
+    __tablename__ = "sale_order"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+    business_date: Mapped[dt.date] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(String(20))  # cashier | import | history
+    total: Mapped[float] = mapped_column(Float, default=0)
+    lines: Mapped[list["OrderLine"]] = relationship(cascade="all, delete-orphan")
+
+
+class OrderLine(Base):
+    __tablename__ = "order_line"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("sale_order.id"))
+    menu_item_id: Mapped[int] = mapped_column(ForeignKey("menu_item.id"))
+    qty: Mapped[int] = mapped_column(Integer)
+    price: Mapped[float] = mapped_column(Float)
+    from_suggestion: Mapped[bool] = mapped_column(Boolean, default=False)
+    item: Mapped[MenuItem] = relationship()
+
+
+class SuggestionEvent(Base):
+    """Every add-on the cashier helper shows, and whether it was sold."""
+    __tablename__ = "suggestion_event"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+    menu_item_id: Mapped[int] = mapped_column(ForeignKey("menu_item.id"))
+    source: Mapped[str] = mapped_column(String(10))  # ai | rules
+    accepted: Mapped[bool] = mapped_column(Boolean, default=False)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("sale_order.id"))
+
+
+class StockMove(Base):
+    __tablename__ = "stock_move"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+    ingredient_id: Mapped[int] = mapped_column(ForeignKey("ingredient.id"))
+    qty: Mapped[float] = mapped_column(Float)  # + in, - out
+    kind: Mapped[str] = mapped_column(String(20))  # opening | sale | delivery | count
+    ref: Mapped[str | None] = mapped_column(String(60))
+
+
+class PurchaseOrder(Base):
+    __tablename__ = "purchase_order"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+    supplier_id: Mapped[int] = mapped_column(ForeignKey("supplier.id"))
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft | sent | received | rejected
+    note: Mapped[str | None] = mapped_column(Text)
+    sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
+    supplier: Mapped[Supplier] = relationship()
+    lines: Mapped[list["PurchaseOrderLine"]] = relationship(cascade="all, delete-orphan")
+
+
+class PurchaseOrderLine(Base):
+    __tablename__ = "purchase_order_line"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    purchase_order_id: Mapped[int] = mapped_column(ForeignKey("purchase_order.id"))
+    ingredient_id: Mapped[int] = mapped_column(ForeignKey("ingredient.id"))
+    qty: Mapped[float] = mapped_column(Float)
+    reason: Mapped[str | None] = mapped_column(Text)
+    ingredient: Mapped[Ingredient] = relationship()
+
+
+class Outbox(Base):
+    """Emails the app sent, or logged when no mail server is configured."""
+    __tablename__ = "outbox"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+    to: Mapped[str] = mapped_column(String(200))
+    subject: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20))  # sent | logged | failed
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class AgentRun(Base):
+    __tablename__ = "agent_run"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+    agent: Mapped[str] = mapped_column(String(30))
+    source: Mapped[str] = mapped_column(String(10))  # ai | rules
+    summary: Mapped[str] = mapped_column(Text)

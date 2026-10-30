@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Restaura · Cashier</title>
+<link rel="icon" href="/static/logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header class="topbar">
+  <img src="/static/logo.svg" alt="">
+  <span class="brand">Restaura</span>
+  <span id="store" class="badge"></span>
+  <nav>
+    <a href="/" aria-current="page">Cashier</a>
+    <a href="/manager">Manager</a>
+  </nav>
+</header>
+<main class="pos">
+  <section>
+    <div class="tabs" id="tabs" role="toolbar" aria-label="Menu categories"></div>
+    <div class="grid" id="grid"></div>
+  </section>
+  <aside class="panel" aria-label="Current order">
+    <h2>Current order</h2>
+    <ul class="lines" id="lines"></ul>
+    <div class="helper" id="helper" aria-live="polite">
+      <header>✦ Cashier helper <span class="badge" id="ai-badge"></span></header>
+      <div id="suggestions"><p class="hint">Add an item and I'll suggest what fits.</p></div>
+    </div>
+    <div class="total"><span>Total</span><span id="total">0 SAR</span></div>
+    <div style="display:flex;gap:8px">
+      <button class="secondary" id="clear">Clear</button>
+      <button class="primary" id="charge" style="flex:1" disabled>Charge</button>
+    </div>
+  </aside>
+</main>
+<script src="/static/cashier.js"></script>
+</body>
+</html>

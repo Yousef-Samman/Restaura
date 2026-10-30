@@ -94,13 +94,25 @@ Both agents read and write the same database. What the cashier sells drives what
 
 In development. Runs as a demo for one store, using sample data, test recipes and a built-in demo cashier screen. Real supplier invoices and menus are not stored in this public repository.
 
-## Planned stack
+## Run it
+
+```bash
+cd backend
+pip install -e ".[dev]"
+python -m uvicorn app.main:create_app --factory --port 8000
+```
+
+Open http://localhost:8000 for the cashier screen. The app starts with sample data. Without `ANTHROPIC_API_KEY` the agents run in rules mode; set the key (see [`.env.example`](.env.example)) to switch them to Claude.
+
+Run the tests with `python -m pytest` inside `backend/`.
+
+## Stack
 
 | Layer | Technology |
 | --- | --- |
 | Backend | Python, FastAPI |
-| Database | PostgreSQL |
-| Web app | React, TypeScript (responsive) |
+| Database | SQLite by default, PostgreSQL via `DATABASE_URL` |
+| Web app | Responsive HTML, CSS and JavaScript served by the backend |
 | Agents | Anthropic Claude API |
 
 ## Security
