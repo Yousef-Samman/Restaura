@@ -673,3 +673,27 @@ body.has-hero .mgr-top { padding-bottom: 10px; }
   .stk-more { padding-left: 8px; }
 }
 .po .btns .wa { white-space: nowrap; justify-content: center; }
+
+/* ---- Logo palette (final brand): ivory, olive, brass, olive ink ----
+   Every color in the app comes from the logo. Semantic colors (late, short, changed) stay, but tuned to sit with olive. */
+:root {
+  --brand: #4F6230; --brand-2: #667A3E; --brand-soft: #EEF0E2;
+  --accent: #B8923F; --accent-2: #94742E; --accent-soft: #F6EEDB;
+  --grad: linear-gradient(135deg, #4F6230 0%, #667A3E 100%);
+  --ink: #2E3A1C; --slate: var(--brand); --slate-2: #4F6230; --slate-3: #4F6230;
+  --page: #FAF9F2; --cloud: #F3F1E4; --paper: #FFFFFF; --line: #E6E1CC; --silver: #E1DDC3; --silver-2: #ECE8D6;
+  --muted: #5E6650;
+  --brass: #B8923F; --brass-text: #8C6D2A; --brass-tint: #FAF4E4; --brass-line: #E8D7AA;
+  --ok: #4D7C2A; --ok-bg: #E7F0DB;
+  --chart: #667A3E; --chart-2: #B8923F;
+  --shadow: 0 1px 2px rgba(46,58,28,.04), 0 6px 18px rgba(46,58,28,.05);
+  --shadow-lift: 0 2px 4px rgba(46,58,28,.06), 0 16px 36px rgba(46,58,28,.14);
+}
+/* agent badges look like the logo tile: ivory with an olive mark and a brass spark */
+.badge { background: linear-gradient(135deg, #FBFAF2, #F2F0E0); box-shadow: inset 0 0 0 1.5px #E1DDC3; }
+.more-row.signout .ic { color: #B0714E; }
+.more-row.signout b { color: var(--ink); }
+.sheet-bg { background: rgba(46,58,28,.45); }
+.rail .cat[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--brass); }
+.stk.coming .sd { background: var(--brass); }
+.chip.sent { background: var(--brass-tint); color: var(--brass-text); }
