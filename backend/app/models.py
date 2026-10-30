@@ -163,3 +163,16 @@ class AuthSession(Base):
     device_id: Mapped[int | None] = mapped_column(ForeignKey("device.id"))
     expires: Mapped[dt.datetime] = mapped_column(DateTime)
     user: Mapped[User] = relationship()
+
+
+class Expense(Base):
+    """Money going out. fixed: a monthly cost such as rent, spread evenly over the days of a period.
+    one_off: a dated payment. purchase: a supplier delivery, recorded automatically at cost."""
+    __tablename__ = "expense"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+    date: Mapped[dt.date] = mapped_column(Date)
+    kind: Mapped[str] = mapped_column(String(10))  # fixed | one_off | purchase
+    category: Mapped[str] = mapped_column(String(40))
+    amount: Mapped[float] = mapped_column(Float)  # SAR; for fixed, per month
+    note: Mapped[str | None] = mapped_column(String(200))

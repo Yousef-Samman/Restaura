@@ -5,7 +5,7 @@ import random
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Ingredient, MenuItem, Order, OrderLine, RecipeLine, StockMove, Supplier
+from .models import Expense, Ingredient, MenuItem, Order, OrderLine, RecipeLine, StockMove, Supplier
 
 SUPPLIERS = [
     ("Fresh Produce Co.", "orders@fresh-produce.example", 1),
@@ -57,7 +57,7 @@ MENU = [
 ]
 
 
-def seed(db: Session, history_days: int = 14) -> None:
+def seed(db: Session, history_days: int = 30) -> None:
     if db.scalar(select(Supplier).limit(1)):
         return
     suppliers = {name: Supplier(name=name, email=email, lead_days=lead) for name, email, lead in SUPPLIERS}
@@ -78,6 +78,7 @@ def seed(db: Session, history_days: int = 14) -> None:
     db.add_all(items)
     db.flush()
     _seed_history(db, items, history_days)
+    _seed_expenses(db)
     db.commit()
 
 
@@ -100,3 +101,15 @@ def _seed_history(db: Session, items: list[MenuItem], days: int) -> None:
             order = Order(business_date=day, source="history", total=sum(i.price for i in lines))
             order.lines = [OrderLine(menu_item_id=i.id, qty=1, price=i.price) for i in lines]
             db.add(order)
+
+
+# sample monthly costs and one-off payments (SAR); illustrative only
+FIXED = [("Rent", 12000, "Shop rent"), ("Salaries", 21000, "5 staff"), ("Utilities", 2200, "Power, water, internet")]
+ONE_OFF = [(26, "Packaging", 850, "Cups, boxes, bags"), (21, "Maintenance", 400, "Waffle maker repair"),
+           (15, "Marketing", 1200, "Social media ads"), (9, "Cleaning", 380, "Cleaning supplies"), (3, "Packaging", 620, "Cups and lids")]
+
+
+def _seed_expenses(db: Session) -> None:
+    today = dt.date.today()
+    db.add_all(Expense(date=today.replace(day=1), kind="fixed", category=c, amount=a, note=n) for c, a, n in FIXED)
+    db.add_all(Expense(date=today - dt.timedelta(days=d), kind="one_off", category=c, amount=a, note=n) for d, c, a, n in ONE_OFF)

@@ -7,8 +7,15 @@ const TABS = [
   { id: "sales", label: "Sales", icon: "sales" },
   { id: "orders", label: "Orders", icon: "orders" },
   { id: "stock", label: "Stock", icon: "stock" },
-  { id: "deliveries", label: "Deliveries", icon: "delivery" },
+  { id: "more", label: "More", icon: "more" },
 ];
+// sections reached from the More tab
+const MORE = [
+  { id: "deliveries", label: "Deliveries", icon: "delivery", sub: "Invoice photos, manual deliveries, POS upload" },
+  { id: "expenses", label: "Expenses", icon: "wallet", sub: "Costs and estimated profit" },
+];
+const SECTION = (id) => [...TABS, ...MORE].find((t) => t.id === id);
+let expDays = 30;
 let tab = location.hash.slice(1) || "today";
 let status = {};
 let salesDays = 14;
@@ -32,7 +39,8 @@ function toast(msg, err = false) {
 
 async function renderTabs() {
   const today = await api("/api/today").catch(() => ({}));
-  $("tabs").innerHTML = TABS.map((t) => `<button data-tab="${t.id}" ${t.id === tab ? 'aria-current="page"' : ""}>${ICONS[t.icon]}${t.label}
+  const active = MORE.some((m) => m.id === tab) ? "more" : tab;
+  $("tabs").innerHTML = TABS.map((t) => `<button data-tab="${t.id}" ${t.id === active ? 'aria-current="page"' : ""}>${ICONS[t.icon]}${t.label}
     ${t.id === "orders" && today.drafts ? `<span class="dot">${today.drafts}</span>` : ""}${t.id === "stock" && today.low_stock ? `<span class="dot">${today.low_stock}</span>` : ""}</button>`).join("");
   $("tabs").querySelectorAll("button").forEach((b) => (b.onclick = () => go(b.dataset.tab)));
 }
@@ -40,7 +48,8 @@ async function renderTabs() {
 function go(t) { tab = t; location.hash = t; render(); window.scrollTo(0, 0); }
 
 async function render() {
-  $("title").textContent = TABS.find((t) => t.id === tab).label;
+  if (!SECTION(tab)) tab = "today";
+  $("title").textContent = SECTION(tab).label;
   document.body.classList.toggle("has-hero", tab === "today");
   renderTabs();
   const view = $("view");
@@ -60,6 +69,47 @@ function agentCard(run) {
 }
 
 const VIEWS = {
+  async more() {
+    return `<div class="section"><div class="panel">${MORE.map((m) => `<button class="more-row" data-go="${m.id}"><span class="ic">${ICONS[m.icon]}</span><span><b>${m.label}</b><br><span class="muted">${m.sub}</span></span>${ICONS.chevron}</button>`).join("")}</div></div>`;
+  },
+
+  async expenses() {
+    const e = await api(`/api/expenses?days=${expDays}`);
+    window._exp = e;
+    const margin = e.sales ? Math.round((100 * e.profit) / e.sales) : 0;
+    const kindLabel = { one_off: "One-off", purchase: "Supplier delivery" };
+    return `<div class="section" style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0 0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">Last ${e.days} days</h2>
+        <div class="seg" role="group" aria-label="Date range">${[7, 14, 30].map((d) => `<button data-edays="${d}" aria-pressed="${d === expDays}">${d} days</button>`).join("")}</div></div>
+      <div class="hero" style="margin-top:12px">
+        <div><div class="label">Sales</div><div class="value num">${sar(e.sales)}</div></div>
+        <div><div class="label">Costs</div><div class="value num">${sar(e.costs)}</div></div>
+        <div><div class="label">Est. profit</div><div class="value num" style="color:${e.profit >= 0 ? "var(--ok)" : "var(--bad)"}">${sar(e.profit)}</div></div>
+        <div><div class="label">Margin</div><div class="value num">${margin}%</div></div>
+      </div>
+      <div class="section"><div class="agent">
+        <div class="head">${ICONS.spark}Expenses check</div>
+        ${e.notes.map((n) => `<div class="headline" style="font-size:16px">${esc(n)}</div>`).join("") || '<div class="headline">No sales in this period yet.</div>'}
+        <div class="meta">Profit = sales − ingredient cost of what was sold − monthly costs for ${e.days} days − one-off costs.</div>
+      </div></div>
+      <div class="section panel chart-card"><h3>Where the money goes</h3><div class="sub">SAR, last ${e.days} days</div><div id="c-exp"></div>
+        <details class="table"><summary>Show as table</summary><table><tr><th>Cost</th><th>SAR</th></tr>${e.by_category.map((c) => `<tr><td>${esc(c.category)}</td><td class="num">${sar(c.amount)}</td></tr>`).join("")}</table></details></div>
+      <div class="section"><h2>Monthly costs</h2><div class="panel">
+        ${e.fixed.map((x) => `<div class="list-item"><span>${esc(x.category)}<br><span class="muted">${esc(x.note || "")}</span></span><span style="display:flex;gap:10px;align-items:center"><b class="num">${sar(x.amount)}/mo</b><button class="secondary-btn" data-del="${x.id}">Remove</button></span></div>`).join("") || '<div class="muted">No monthly costs yet.</div>'}
+      </div></div>
+      <div class="section"><h2>Payments</h2><div class="panel">
+        ${e.entries.map((x) => `<div class="list-item"><span>${esc(x.category)} · ${esc(x.note || "")}<br><span class="muted">${new Date(x.date + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })} · ${kindLabel[x.kind]}</span></span><span style="display:flex;gap:10px;align-items:center"><b class="num">${sar(x.amount)}</b>${x.kind === "purchase" ? "" : `<button class="secondary-btn" data-del="${x.id}">Remove</button>`}</span></div>`).join("") || '<div class="muted">No payments in this period.</div>'}
+        <div class="muted" style="font-size:13px;margin-top:10px">Paid to suppliers in this period: <b>${sar(e.purchases_paid)}</b>. Deliveries are added here automatically at cost.</div>
+      </div></div>
+      <div class="section"><h2>Add an expense</h2><div class="panel form">
+        <label class="field">Type<select id="x-kind"><option value="one_off">One-off payment</option><option value="fixed">Monthly cost</option></select></label>
+        <label class="field">Category<select id="x-cat">${e.categories.map((c) => `<option>${c}</option>`).join("")}</select></label>
+        <label class="field">Amount (SAR)<input id="x-amt" type="number" min="0" step="any" inputmode="decimal"></label>
+        <label class="field">Note (optional)<input id="x-note" type="text" maxlength="200"></label>
+        <button class="solid" id="x-save">Add expense</button>
+      </div></div>`;
+  },
+
   async today() {
     const [t, ins, runs, devs] = await Promise.all([api("/api/today"), api("/api/insights/cashier"), api("/api/agents/runs"), api("/api/devices")]);
     const rate = ins.acceptance_rate == null ? "–" : `${Math.round(ins.acceptance_rate * 100)}%`;
@@ -188,6 +238,21 @@ function bindAgent() {
 }
 
 const BIND = {
+  more() {
+    document.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
+  },
+  expenses() {
+    const e = window._exp;
+    Charts.bars($("c-exp"), e.by_category.map((c) => ({ value: c.amount, label: c.category, tip: `${esc(c.category)}<br><b>${sar(c.amount)}</b>${e.sales ? ` · ${Math.round((100 * c.amount) / e.sales)}% of sales` : ""}` })));
+    document.querySelectorAll("[data-edays]").forEach((b) => (b.onclick = () => { expDays = +b.dataset.edays; render(); }));
+    document.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { await api(`/api/expenses/${b.dataset.del}`, { method: "DELETE" }); toast("Expense removed"); render(); }));
+    $("x-save").onclick = async () => {
+      const amount = parseFloat($("x-amt").value);
+      if (!(amount > 0)) return toast("Enter the amount", true);
+      await api("/api/expenses", { method: "POST", body: JSON.stringify({ kind: $("x-kind").value, category: $("x-cat").value, amount, note: $("x-note").value || null }) });
+      toast("Expense added"); render();
+    };
+  },
   sales() {
     const s = window._sales;
     const day = (iso) => new Date(iso + "T00:00");

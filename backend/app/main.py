@@ -9,12 +9,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import auth, mailer, stock
+from . import auth, finance, mailer, stock
 from .agents import cashier, invoice, stock_agent
 from .agents.llm import LLM
 from .config import Settings, get_settings
 from .db import Base, make_engine, make_sessionmaker
-from .models import (AgentRun, Device, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
+from .models import (AgentRun, Device, Expense, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
                      PurchaseOrderLine, RecipeLine, SuggestionEvent)
 from .seed import seed
 
@@ -39,6 +39,14 @@ class ReceiveLine(BaseModel):
 class Receive(BaseModel):
     lines: list[ReceiveLine]
     invoice_ref: str | None = None
+
+
+class ExpenseIn(BaseModel):
+    kind: str = Field(pattern="^(fixed|one_off)$")
+    category: str = Field(min_length=1, max_length=40)
+    amount: float = Field(gt=0)
+    note: str | None = Field(default=None, max_length=200)
+    date: dt.date | None = None
 
 
 class CountLine(BaseModel):
@@ -264,6 +272,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "today_orders": [{"at": a.isoformat() + "Z", "total": t} for a, t in today_orders],
         }
 
+    # ---- expenses and profit ------------------------------------------------------
+    @app.get("/api/expenses")
+    def expenses(days: int = 30, db: Session = Depends(get_db), _=Depends(manager_only)):
+        return finance.summary(db, max(1, min(days, 90)))
+
+    @app.post("/api/expenses")
+    def add_expense(body: ExpenseIn, db: Session = Depends(get_db), _=Depends(manager_only)):
+        e = Expense(kind=body.kind, category=body.category, amount=body.amount, note=body.note,
+                    date=body.date or dt.date.today())
+        db.add(e)
+        db.commit()
+        return {"id": e.id}
+
+    @app.delete("/api/expenses/{expense_id}")
+    def delete_expense(expense_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
+        e = db.get(Expense, expense_id)
+        if not e or e.kind == "purchase":
+            raise HTTPException(404, "Expense not found")
+        db.delete(e)
+        db.commit()
+        return {"deleted": expense_id}
+
     # ---- stock and the stock-to-order agent ----------------------------------
     @app.get("/api/stock")
     def get_stock(db: Session = Depends(get_db), _=Depends(manager_only)):
@@ -344,6 +374,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, "Only sent orders can be received")
         for l in body.lines:
             stock.receive(db, l.ingredient_id, l.qty, ref=body.invoice_ref or f"PO {po.id}")
+        finance.record_purchase(db, [(l.ingredient_id, l.qty) for l in body.lines], f"{po.supplier.name} · {body.invoice_ref or f'PO {po.id}'}")
         po.status = "received"
         db.commit()
         return po_dict(po)
@@ -354,6 +385,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if not db.get(Ingredient, l.ingredient_id):
                 raise HTTPException(404, f"Ingredient {l.ingredient_id} not found")
             stock.receive(db, l.ingredient_id, l.qty, ref=body.invoice_ref or "manual delivery")
+        finance.record_purchase(db, [(l.ingredient_id, l.qty) for l in body.lines], body.invoice_ref or "Manual delivery")
         db.commit()
         return {"received": len(body.lines)}
 

@@ -227,3 +227,11 @@ details.table table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 details.table td, details.table th { text-align: left; padding: 6px 0; border-top: 1px solid var(--line); }
 details.table td:last-child, details.table th:last-child { text-align: right; }
 .tabbar .in { grid-template-columns: repeat(5, 1fr); max-width: 600px; }
+
+.more-row { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 12px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.more-row:first-child { border-top: 0; }
+.more-row .ic { width: 44px; height: 44px; border-radius: 12px; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; flex: none; }
+.more-row .ic svg { width: 22px; height: 22px; }
+.more-row > svg { width: 18px; margin-left: auto; color: var(--muted); }
+.more-row .muted { font-size: 13px; }
+.list-item b.num { white-space: nowrap; }
