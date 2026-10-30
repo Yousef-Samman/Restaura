@@ -537,7 +537,9 @@ body.has-hero .mgr-top { padding-bottom: 10px; }
 .paid b { font-size: 22px; color: var(--ok); }
 .paid span { font-size: 14px; color: var(--muted); }
 .mgr-top .titles { flex: 1; }
-.mgr-top .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mgr-top .s { line-height: 1.3; }
+.mgr-top .s span { white-space: nowrap; } .mgr-top .s i { font-style: normal; }
+@media (max-width: 480px) { .mgr-top .s span { display: block; } .mgr-top .s i { display: none; } }
 .mgr-top .ai-pill { white-space: nowrap; flex: none; font-size: 12px; padding: 6px 10px; line-height: 1; }
 @media (max-width: 420px) { .mgr-top .t { font-size: 16px; } }
 .po-head small { display: block; }
@@ -697,3 +699,137 @@ body.has-hero .mgr-top { padding-bottom: 10px; }
 .rail .cat[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--brass); }
 .stk.coming .sd { background: var(--brass); }
 .chip.sent { background: var(--brass-tint); color: var(--brass-text); }
+
+/* ---- Feedback round 3 ---- */
+/* logo: the SVG already draws the rounded tile and its border, so its frame adds nothing */
+.brandmark .tile, .auth .brand .mark, .rail .logo { background: none; border-radius: 0; box-shadow: none; overflow: visible; padding: 0; width: auto; height: auto; }
+.brandmark .tile img { width: 40px; height: 40px; }
+.auth .brand .mark img { width: 60px; height: 60px; }
+.rail .logo img { width: 56px; height: 56px; }
+
+/* sign in: wordmark and staff PIN sign-in */
+.wordmark { display: inline-flex; flex-direction: column; gap: 3px; font-family: "Josefin Sans", "Manrope", Arial, sans-serif; font-weight: 600; font-size: 24px; letter-spacing: .14em; color: var(--ink); line-height: 1; position: relative; top: 3px; }
+.wordmark small { font-family: Georgia, serif; font-weight: 400; font-size: 9px; letter-spacing: .4em; color: var(--brass); border-top: 1px solid var(--brass); padding-top: 3px; }
+.auth .tag { margin-top: 8px; }
+.who-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.who-grid button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border-radius: 12px; background: var(--cloud); border: 1.5px solid transparent; text-align: left; }
+.who-grid button b { font-size: 15px; } .who-grid button small { font-size: 12px; color: var(--muted); }
+.who-grid button[aria-pressed="true"] { background: var(--brass-tint); border-color: var(--brass); }
+#pinbox { display: flex; flex-direction: column; gap: 10px; text-align: center; }
+.linkish { font-weight: 700; text-decoration: underline; text-underline-offset: 3px; align-self: center; }
+.who-line { font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+
+/* cashier: step bar, panes, suggestions, payment */
+.pane { flex: 1; min-height: 0; overflow-y: auto; padding: 0 22px; display: flex; flex-direction: column; }
+.pane .lines { padding: 0; margin: 0; }
+.pane .empty-order { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.pane .empty-order svg { width: 36px; height: 36px; }
+.actions .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.actions .btn svg { width: 18px; height: 18px; }
+.actions .btn.solid { flex: 2; white-space: nowrap; padding: 0 12px; } .actions .btn.wide { flex: 1; }
+.actions:has(#clear) { grid-template-columns: auto 1fr; }
+.actions #clear { padding: 0 18px; }
+.sg { display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px; }
+.sg-h { display: flex; gap: 10px; align-items: flex-start; }
+.sg-h svg { width: 20px; height: 20px; color: var(--brass); flex: none; margin-top: 2px; }
+.sg-h b { display: block; font-size: 16px; } .sg-h small { color: var(--muted); font-size: 13px; }
+.sg-card { border: 1.5px solid var(--line); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 8px; background: var(--paper); }
+.sg-card.added { border-color: var(--ok); background: var(--ok-bg); }
+.sg-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.sg-top b { font-size: 17px; } .sg-top span { font-weight: 800; color: var(--brass-text); }
+.sg-card p { margin: 0; font-size: 15px; line-height: 1.4; }
+.sg-add { height: 44px; border-radius: 12px; background: var(--brass); color: var(--ink); font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.sg-add svg { width: 16px; height: 16px; }
+.sg-add:disabled { background: transparent; color: var(--ok); cursor: default; }
+.sg-list { display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; color: var(--muted); }
+.sg-list .lbl { width: 100%; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
+.sg-list span:not(.lbl) { background: var(--cloud); border-radius: 999px; padding: 4px 10px; }
+.pay, .cash { display: flex; flex-direction: column; gap: 10px; }
+.pay-h { font-size: 16px; font-weight: 800; }
+.pay-opt { display: grid; grid-template-columns: 48px minmax(0, 1fr) 18px; gap: 12px; align-items: center; padding: 16px; border-radius: 16px; border: 1.5px solid var(--line); background: var(--paper); text-align: left; }
+.pay-opt:hover { border-color: var(--brass); background: var(--brass-tint); }
+.pay-opt .pi { width: 48px; height: 48px; border-radius: 14px; background: var(--brass-tint); color: var(--brass-text); display: grid; place-items: center; }
+.pay-opt .pi svg { width: 26px; height: 26px; }
+.pay-opt b { display: block; font-size: 17px; } .pay-opt small { color: var(--muted); font-size: 13px; }
+.pay-opt > svg { width: 18px; height: 18px; color: var(--muted); }
+.cash-in { font-size: 34px; font-weight: 800; text-align: center; padding: 8px; border-radius: 14px; background: var(--cloud); }
+.cash-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.cash-quick button { height: 40px; border-radius: 10px; border: 1.5px solid var(--brass-line); background: var(--brass-tint); font-weight: 800; }
+.cash-keys button { height: 48px; font-size: 20px; }
+.change { text-align: center; font-weight: 700; color: var(--muted); padding: 8px; border-radius: 12px; }
+.change.ok { background: var(--ok-bg); color: var(--ok); } .change b { font-size: 20px; }
+.pane .paid { margin: auto 0; }
+
+/* NearPay tap-to-pay screen */
+.tap { position: fixed; inset: 0; z-index: 60; background: rgba(46,58,28,.55); display: grid; place-items: center; padding: 20px; }
+.tap-card { width: min(420px, 100%); background: var(--paper); border-radius: 28px; padding: 22px 24px 24px; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; box-shadow: var(--shadow-lift); }
+.tap-top { width: 100%; display: flex; justify-content: space-between; align-items: center; }
+.tap-brand { font-weight: 800; font-size: 13px; letter-spacing: .04em; color: var(--brass-text); }
+.tap-x { font-weight: 700; color: var(--muted); }
+.tap-say b { display: block; font-size: 19px; } .tap-say span { font-family: "Noto Sans Arabic", sans-serif; color: var(--muted); font-size: 15px; }
+.tap-amt { font-size: 32px; font-weight: 800; }
+.tap-ar { font-family: "Noto Sans Arabic", sans-serif; color: var(--muted); margin-top: -10px; }
+.tap-card .btn.solid { width: 100%; }
+.actions .btn.wide, .actions > .wide { grid-column: 1 / -1; }
+
+/* round 4: stepper, wider order panel while offering suggestions, part payments, tap animation */
+.pos { transition: grid-template-columns .35s cubic-bezier(.2,.8,.2,1); }
+.pos.wide-order { grid-template-columns: 96px minmax(0, 1fr) 500px; }
+@media (max-width: 1180px) { .pos.wide-order { grid-template-columns: 84px minmax(0, 1fr) 440px; } }
+.steps-bar { list-style: none; margin: 0; padding: 4px 22px 14px; display: grid; grid-template-columns: repeat(3, 1fr); }
+.steps-bar li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; }
+.steps-bar li + li::before { content: ""; position: absolute; top: 13px; right: calc(50% + 19px); left: calc(-50% + 19px); height: 2px; border-radius: 2px; background: var(--line); }
+.steps-bar li.done + li::before { background: var(--ok); }
+.steps-bar i { font-style: normal; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; background: var(--paper); box-shadow: inset 0 0 0 2px var(--line); color: var(--muted); transition: background .2s, box-shadow .2s; }
+.steps-bar i svg { width: 15px; height: 15px; }
+.steps-bar span { white-space: nowrap; line-height: 1.2; }
+.steps-bar .now { color: var(--ink); }
+.steps-bar .now i { background: var(--brass); color: var(--ink); box-shadow: 0 0 0 4px var(--brass-tint); }
+.steps-bar .done { color: var(--ok); }
+.steps-bar .done i { background: var(--ok); color: #fff; box-shadow: none; }
+.sg-order { margin-top: 6px; display: flex; flex-direction: column; gap: 8px; }
+.sg-order .lbl { font-weight: 800; text-transform: uppercase; letter-spacing: .06em; font-size: 11px; color: var(--muted); }
+.part { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 14px; background: var(--brass-tint); border: 1.5px solid var(--brass-line); margin-bottom: 4px; }
+.part span { font-size: 13px; color: var(--muted); } .part b { font-size: 18px; }
+.change.short { background: var(--brass-tint); color: var(--brass-text); }
+.pay-h .muted { font-weight: 600; }
+.tap-stage { position: relative; width: 210px; height: 170px; display: grid; place-items: center; color: var(--brand); }
+.tap-pad { width: 112px; height: 112px; border-radius: 50%; background: var(--brand-soft); display: grid; place-items: center; position: relative; z-index: 1; transition: background .3s, transform .3s; }
+.tap-pad svg { width: 54px; height: 54px; }
+.tap-pad path { animation: tapArc 1.8s ease-in-out infinite; }
+.tap-wave { position: absolute; width: 112px; height: 112px; border-radius: 50%; border: 2px solid var(--brand-2); opacity: 0; animation: tapWave 2.4s ease-out infinite; }
+.tap-wave.w2 { animation-delay: 1.2s; }
+.tap-cardart { position: absolute; z-index: 2; width: 92px; height: 58px; border-radius: 10px; background: linear-gradient(135deg, #3E4D25, #667A3E 60%, #7E9150); box-shadow: 0 10px 22px rgba(46,58,28,.28); right: -6px; bottom: 4px; transform-origin: 50% 50%; animation: cardTap 2.4s cubic-bezier(.45,.05,.25,1) infinite; }
+.tap-cardart .chip { position: absolute; left: 10px; top: 14px; width: 16px; height: 12px; border-radius: 3px; background: linear-gradient(135deg, #D9BC72, #B8923F); }
+.tap-cardart .cl { position: absolute; right: 10px; top: 12px; width: 10px; height: 14px; border: 2px solid rgba(255,255,255,.7); border-left: 0; border-radius: 0 10px 10px 0; }
+.tap-cardart b { position: absolute; left: 10px; bottom: 8px; color: rgba(255,255,255,.9); font-size: 9px; letter-spacing: .08em; }
+.tap-spin { position: absolute; width: 136px; height: 136px; color: var(--brass); opacity: 0; transition: opacity .2s; }
+.tap-done { position: absolute; z-index: 3; width: 112px; height: 112px; border-radius: 50%; background: var(--ok); color: #fff; display: grid; place-items: center; transform: scale(.4); opacity: 0; }
+.tap-done svg { width: 54px; height: 54px; } .tap-done path { stroke-dasharray: 40; stroke-dashoffset: 40; }
+@keyframes cardTap {
+  0% { transform: translate(40px, 30px) rotate(14deg); opacity: 0; }
+  18% { opacity: 1; }
+  45%, 62% { transform: translate(-65px, -52px) rotate(-4deg) scale(.94); opacity: 1; }
+  85%, 100% { transform: translate(40px, 30px) rotate(14deg); opacity: 0; }
+}
+@keyframes tapWave { from { transform: scale(1); opacity: .55; } to { transform: scale(1.55); opacity: 0; } }
+@keyframes tapArc { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes tapSpin { to { transform: rotate(360deg); } }
+@keyframes tapPop { 0% { transform: scale(.4); opacity: 0; } 70% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes tapDraw { to { stroke-dashoffset: 0; } }
+.tap.reading .tap-cardart { animation: none; transform: translate(-65px, -52px) rotate(-4deg) scale(.94); opacity: 1; transition: transform .3s; }
+.tap.reading .tap-wave, .tap.ok .tap-wave { animation: none; opacity: 0; }
+.tap.reading .tap-spin { opacity: 1; animation: tapSpin .9s linear infinite; }
+.tap.ok .tap-cardart { animation: none; opacity: 0; transition: opacity .2s; }
+.tap.ok .tap-done { animation: tapPop .45s cubic-bezier(.2,.9,.3,1.3) forwards; }
+.tap.ok .tap-done path { animation: tapDraw .35s .25s ease-out forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .tap-cardart, .tap-wave, .tap-pad path, .tap.reading .tap-spin { animation: none !important; }
+  .tap-cardart { transform: translate(-65px, -52px) rotate(-4deg); opacity: 1; }
+  .tap.ok .tap-done, .tap.ok .tap-done path { animation-duration: .01s; }
+}
+.sg-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; padding: 12px 14px; }
+.sg-card .sg-top { grid-column: 1; justify-content: flex-start; } .sg-card p { grid-column: 1; font-size: 14px; color: var(--muted); }
+.sg-card .sg-add { grid-column: 2; grid-row: 1 / span 2; padding: 0 16px; height: 42px; }
+.tap.ok .tap-x, .tap.ok #tap-sim, .tap.reading #tap-sim { visibility: hidden; }
+.sg-top span { white-space: nowrap; }

@@ -6,7 +6,7 @@
 <title>Restaura · Cashier</title>
 <link rel="icon" href="/static/logo.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Noto+Sans+Arabic:wght@600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -36,19 +36,13 @@
   </section>
   <aside class="order" aria-label="Current order">
     <header><h2>Current order</h2><span class="muted num" id="count"></span></header>
-    <ul class="lines" id="lines"></ul>
-    <div class="helper" aria-live="polite">
-      <div class="head"><span id="spark"></span>Cashier helper <span class="ai-pill" id="ai-badge"></span></div>
-      <div id="suggestions"></div>
-    </div>
+    <ol class="steps-bar" id="stepsbar" aria-label="Order steps"></ol>
+    <div class="pane" id="pane"></div>
     <div class="totals">
       <div class="r"><span>Subtotal (excl. VAT)</span><span class="num" id="subtotal">0.00 SAR</span></div>
       <div class="r"><span>VAT 15%</span><span class="num" id="vat">0.00 SAR</span></div>
       <div class="r grand"><span>Total</span><span class="num" id="total">0 SAR</span></div>
-      <div class="actions">
-        <button class="btn ghost" id="clear">Clear</button>
-        <button class="btn solid" id="charge" disabled>Charge</button>
-      </div>
+      <div class="actions" id="actions"></div>
     </div>
   </aside>
 </div>
@@ -56,6 +50,22 @@
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
     <header><h2 id="sheet-title">Today's checklists</h2><button class="btn ghost" id="sheet-close">Close</button></header>
     <div id="sheet-body"></div>
+  </div>
+</div>
+<div class="tap" id="tap" hidden>
+  <div class="tap-card" role="dialog" aria-modal="true" aria-labelledby="tap-amt">
+    <div class="tap-top"><span class="tap-brand">NearPay · Tap to pay</span><button class="tap-x" id="tap-cancel" aria-label="Cancel payment">Cancel</button></div>
+    <div class="tap-stage" aria-hidden="true">
+      <span class="tap-wave"></span><span class="tap-wave w2"></span>
+      <div class="tap-pad"><svg viewBox="0 0 48 48"><path d="M17 15a13 13 0 0 1 0 18M23.5 10.5a20 20 0 0 1 0 27M30 6a27 27 0 0 1 0 36" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><circle cx="11" cy="24" r="2.6" fill="currentColor"/></svg></div>
+      <svg class="tap-spin" viewBox="0 0 120 120"><circle cx="60" cy="60" r="56" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-dasharray="90 262"/></svg>
+      <div class="tap-cardart"><i class="chip"></i><i class="cl"></i><b>•••• 4821</b></div>
+      <div class="tap-done"><svg viewBox="0 0 48 48"><path d="M14 25l7 7 14-15" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    </div>
+    <div class="tap-say" id="tap-say"><b>Present card or phone</b><span lang="ar" dir="rtl">قدّم البطاقة أو الجوال</span></div>
+    <div class="tap-amt num" id="tap-amt">0.00 SAR</div>
+    <div class="tap-ar num" lang="ar" dir="rtl" id="tap-amt-ar"></div>
+    <button class="btn solid" id="tap-sim">Simulate a card tap (demo)</button>
   </div>
 </div>
 <div class="sheet-bg center" id="pin-sheet" hidden>

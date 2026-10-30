@@ -749,7 +749,7 @@ const BIND = {
 
 (async () => {
   status = await api("/api/status");
-  $("store").textContent = `${status.store} · ${new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}`;
+  $("store").innerHTML = `<span>${esc(status.store)}</span><i> · </i><span>${new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</span>`;
   $("back-icon").innerHTML = ICONS.back;
   $("ai-badge").textContent = status.ai_enabled ? "AI on" : "AI off";
   $("ai-badge").classList.toggle("on", status.ai_enabled);

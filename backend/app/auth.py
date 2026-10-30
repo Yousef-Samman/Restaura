@@ -12,7 +12,7 @@ from fastapi import Cookie, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import AuthSession, Device, User, now
+from .models import AuthSession, Device, StaffMember, User, now
 
 SESSION_COOKIE, DEVICE_COOKIE = "restaura_session", "restaura_device"
 SESSION_HOURS = 12
@@ -61,6 +61,29 @@ def login(db: Session, username: str, password: str, device_token: str | None) -
     token = secrets.token_urlsafe(32)
     db.add(AuthSession(token_hash=_h(token), user_id=user.id, device_id=device.id if device else None,
                        expires=now() + dt.timedelta(hours=SESSION_HOURS)))
+    db.commit()
+    return token, user
+
+
+def staff_login(db: Session, staff_id: int, pin: str, device_token: str | None) -> tuple[str, User]:
+    """A staff member signs in on the paired cashier iPad with their own 4-digit PIN, so the app
+    knows who is working (checklists, orders). Each staff member gets their own cashier account."""
+    device = device_from_cookie(db, device_token)
+    if not device:
+        raise HTTPException(403, "Staff can only sign in on the store's paired cashier iPad.")
+    member = db.get(StaffMember, staff_id)
+    if not member or not member.active or not verify_password(pin, member.pin_hash):
+        raise HTTPException(401, "Wrong PIN")
+    username = f"staff-{member.id}"
+    user = db.scalar(select(User).where(User.username == username))
+    if not user:
+        # no password sign-in for these accounts: the PIN on the paired iPad is the only way in
+        user = User(username=username, name=member.name, role="cashier", password_hash=hash_password(secrets.token_urlsafe(24)))
+        db.add(user)
+        db.flush()
+    user.name = member.name
+    token = secrets.token_urlsafe(32)
+    db.add(AuthSession(token_hash=_h(token), user_id=user.id, device_id=device.id, expires=now() + dt.timedelta(hours=SESSION_HOURS)))
     db.commit()
     return token, user
 

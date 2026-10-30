@@ -28,6 +28,7 @@ const ICONS = {
   // agent badges: what the agent works on, plus a brass spark that marks it as AI
   stockAgent: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 9.2l7.5-3.6 7.5 3.6-7.5 3.6z" stroke="#667A3E" stroke-width="1.7" stroke-linejoin="round"/><path d="M3.5 9.2v7.6l7.5 3.6 7.5-3.6V9.2M11 12.8v7.6" stroke="#667A3E" stroke-width="1.7" stroke-linejoin="round"/><path d="M19.5 1.8l.85 2.35 2.35.85-2.35.85-.85 2.35-.85-2.35-2.35-.85 2.35-.85z" fill="#B8923F"/></svg>',
   overviewAgent: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4" width="13" height="16.5" rx="2.2" stroke="#667A3E" stroke-width="1.7"/><path d="M7 9.5h6M7 13h6M7 16.5h3.5" stroke="#667A3E" stroke-width="1.7" stroke-linecap="round"/><path d="M19.5 1.8l.85 2.35 2.35.85-2.35.85-.85 2.35-.85-2.35-2.35-.85 2.35-.85z" fill="#B8923F"/></svg>',
+  card: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6.5 15h4"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
   bang: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="10.4" y="4.5" width="3.2" height="10.5" rx="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.9" fill="currentColor"/></svg>',
 };

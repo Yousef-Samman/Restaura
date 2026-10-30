@@ -1,7 +1,7 @@
 # Restaura brand
 
 ## Name
-Restaura comes from the Latin *restaurare*, "to restore"; the word "restaurant" has the same root. In code and documents the name is written **Restaura**. In the logo it is set in Roman capitals as **RESTAVRA** (the Latin spelling, U written as V), with **MMXXVI** under a thin brass rule, like a plaque.
+Restaura comes from the Latin *restaurare*, "to restore"; the word "restaurant" has the same root. The name is **Restaura** everywhere. In the logo it is set in capitals as **RESTAURA**, with **MMXXVI** (2026) under a thin brass rule, like a Roman plaque.
 
 ## Logo
 A flat serving cloche (the dome a restaurant lifts to present a dish) with a small AI spark, in dark olive and brass on an ivory tile.
