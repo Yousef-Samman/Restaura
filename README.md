@@ -75,7 +75,7 @@ Both agents read and write the same database. What the cashier sells drives what
 
 ## More of the restaurant
 
-These sections are built and share the same database. Today they run on rules; the plan is to turn the most used ones into Claude agents next.
+These sections are built and share the same database. The manager overview writes its briefing with Claude when a key is set; the others run on rules today, and the most used ones become Claude agents next.
 
 | Section | What it does |
 | --- | --- |
