@@ -69,6 +69,11 @@ def markdown(r: dict) -> str:
     lines += ["", f"**{p['stores']} random stores**: {p['needed_an_order']} needed an order. Recall {_pct(p['recall'])}, "
               f"precision {_pct(p['precision'])}, orders too small to reach par at delivery: {p['orders_too_small']}, "
               f"more than one rounding step too large: {p['orders_too_large']}.", ""]
+    if "busy_days_ahead" in st:
+        b = st["busy_days_ahead"]
+        lines += [f"**Busy days after the delivery** (Claude, {b['runs']} runs): the 7-day average gives {b['code_qty']:g} g, "
+                  f"which runs out in the busy days. Claude raised it in {b['raised']} of {b['runs']} runs, lowered it in "
+                  f"{b['lowered']}, went outside the allowed range or skipped the order in {b['out_of_range_or_missing']}.", ""]
     lines += ["## 4. Invoice reader", ""]
     inv = r["invoice"]
     if "skipped" in inv:
