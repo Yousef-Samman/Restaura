@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/restaura-icon-200.png" alt="Restaura logo" width="112">
+<img src="assets/restaura-icon-rounded-224.png" alt="Restaura logo" width="112">
 
 # Restaura
 

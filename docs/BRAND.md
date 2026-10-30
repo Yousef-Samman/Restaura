@@ -5,7 +5,8 @@ A serving cloche (the dome a restaurant lifts to present a dish) with a small AI
 
 | File | Use |
 | --- | --- |
-| `assets/restaura-icon.svg`, `assets/restaura-icon-512.png`, `-200.png`, `-100.png` | App icon, avatars, favicon. Full square, so it survives circular crops. |
+| `assets/restaura-icon.svg`, `assets/restaura-icon-rounded-512.png`, `-224.png` | App icon and README logo, with rounded corners. |
+| `assets/restaura-icon-512.png`, `-200.png`, `-100.png` | Square versions for places that crop to a circle. |
 | `assets/restaura-mark-dark-bg.svg` | Mark alone on slate or other dark backgrounds. |
 | `assets/restaura-mark-light-bg.svg` | Mark alone on cloud or white backgrounds. |
 | `assets/restaura-banner.png` | Cover and banner image (1600x700). |
