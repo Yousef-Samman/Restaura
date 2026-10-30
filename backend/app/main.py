@@ -13,13 +13,13 @@ from sqlalchemy.orm import Session, object_session, selectinload
 from . import auth, evaluation, finance, forecast, mailer, routines, sales_report, staff as staffing, stock
 from . import nightly
 from .email_template import HEADER_CID, order_email_html
-from .agents import cashier, invoice, overview, staff_agent, stock_agent
+from .agents import cashier, invoice, overview, staff_agent, stock_agent, stock_memory
 from .agents.stock_agent import split_change
 from .agents.llm import LLM
 from .config import Settings, get_settings
 from .db import Base, make_engine, make_sessionmaker
 from .models import (AgentRun, Device, Expense, RoutineTask, Shift, StaffMember, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
-                     PurchaseOrderLine, RecipeLine, StaffReview, StaffTip, StockMove, Supplier, SuggestionEvent)
+                     PurchaseOrderLine, RecipeLine, Lesson, StaffReview, StaffTip, StockMove, Supplier, SuggestionEvent)
 from .seed import STORE_UTC_OFFSET, seed
 
 STATIC = Path(__file__).parent / "static"
@@ -546,6 +546,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def run_stock_agent(db: Session = Depends(get_db), _=Depends(manager_only)):
         return stock_agent.run(db, llm)
 
+    # ---- what the stock agent learned: suggestions the manager applies or not ----------------------------------
+    @app.get("/api/lessons")
+    def lessons(db: Session = Depends(get_db), _=Depends(manager_only)):
+        waiting = stock_memory.refresh(db)
+        db.commit()
+        return {"waiting": [stock_memory.as_dict(l) for l in waiting],
+                "applied": [stock_memory.as_dict(l) for l in stock_memory.applied(db)]}
+
+    def get_lesson(db: Session, lesson_id: int) -> Lesson:
+        l = db.get(Lesson, lesson_id)
+        if not l or l.status != "suggested":
+            raise HTTPException(404, "This suggestion is no longer waiting")
+        return l
+
+    @app.post("/api/lessons/{lesson_id}/apply")
+    def apply_lesson(lesson_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
+        l = get_lesson(db, lesson_id)
+        stock_memory.apply(db, l)
+        db.commit()
+        return stock_memory.as_dict(l)
+
+    @app.post("/api/lessons/{lesson_id}/dismiss")
+    def dismiss_lesson(lesson_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
+        l = get_lesson(db, lesson_id)
+        stock_memory.dismiss(l)
+        db.commit()
+        return stock_memory.as_dict(l)
+
     @app.get("/api/agents/runs")
     def agent_runs(db: Session = Depends(get_db), _=Depends(manager_only)):
         runs = db.scalars(select(AgentRun).order_by(AgentRun.id.desc()).limit(20))
@@ -670,7 +698,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "lead_days": po.supplier.lead_days, "changed": any(split_change(l.reason)[1] for l in po.lines),
                 "lines": [{"id": l.id, "ingredient_id": l.ingredient_id, "ingredient": l.ingredient.name,
                            "unit": l.ingredient.unit, "qty": l.qty, "reason": split_change(l.reason)[0],
-                           "change": split_change(l.reason)[1],
+                           "change": split_change(l.reason)[1], "drafted_qty": l.drafted_qty,
+                           # a waiting lesson about this ingredient, shown beside the line for the manager to use or not
+                           "suggestion": stock_memory.line_suggestion(object_session(po), l.ingredient, l.qty) if po.status == "draft" else None,
                            "est_cost": round(l.qty * l.ingredient.unit_cost, 2)} for l in po.lines]}
 
     def get_po(db: Session, po_id: int) -> PurchaseOrder:
@@ -736,7 +766,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         for l in body.lines:
             stock.receive(db, l.ingredient_id, l.qty, ref=po_ref(po) + (f" · {body.invoice_ref[:40]}" if body.invoice_ref else ""))
         finance.record_purchase(db, [(l.ingredient_id, l.qty) for l in body.lines], f"{po.supplier.name} · {body.invoice_ref or po_ref(po)}")
-        po.status = "received"
+        po.status, po.received_at = "received", dt.datetime.now(dt.UTC).replace(tzinfo=None)
         db.commit()
         return po_dict(po)
 

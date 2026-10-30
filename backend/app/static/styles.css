@@ -958,3 +958,13 @@ body.has-hero .mgr-top { padding-bottom: 10px; }
 .checks label input { margin-top: 3px; accent-color: var(--brand); }
 .checks small { display: block; font-size: 11.5px; color: var(--muted); }
 .danger { color: var(--bad); font-weight: 800; height: 44px; }
+
+/* What the stock agent learned */
+.tipcard.lesson { margin-top: 10px; } .tipcard.lesson .row { display: flex; gap: 8px; margin-top: 6px; }
+.tipcard.lesson .row button { height: 40px; padding: 0 16px; border-radius: 12px; font-weight: 800; }
+.learned-hint { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; background: var(--brass-tint); border: 1px solid var(--brass-line); border-radius: 12px; padding: 8px 10px; margin-top: 6px; font-size: 13px; width: 100%; }
+.learned-hint svg { width: 14px; height: 14px; color: var(--brass-text); flex: none; }
+.learned-hint span { flex: 1; min-width: 180px; }
+.learned-hint .link { font-weight: 800; }
+.po .ln .learned-hint { grid-column: 1 / -1; }
+.panel > .warn { background: var(--warn-bg); color: var(--warn); border-radius: 12px; padding: 10px 12px; font-size: 14px; font-weight: 600; }

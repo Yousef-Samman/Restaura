@@ -1,6 +1,12 @@
 """Sales forecast for the next days: the last 7 days' average (the current level) times the weekday's share of a
 normal week, learned over the last 8 weeks. It follows a change in level, such as summer or Ramadan, within a week.
 Chosen by backtest over the earlier method, a plain average of the same weekday over 4 weeks: see evals/.
+
+The forecast checks itself every day (scorecard()): it replays the last 4 weeks, forecasting each day from only
+the days before it, compares with what was sold, and tells the manager when it has been further off than usual,
+which usually means something changed (an event, a promotion, a closed day). Two ways of correcting itself were
+tried and rejected because they made it worse on both the sample and the real store's sales: switching to
+whichever method was closest lately, and correcting a steady lean (see evals/forecast_eval.py).
 Item forecasts use the same weekday's item mix, scaled to the forecast, and through the recipes give the
 ingredients needed."""
 import datetime as dt
@@ -44,6 +50,49 @@ def level_weekday_forecast(history: dict[dt.date, float], origin: dt.date, day: 
     if not recent or index is None:
         return None
     return sum(recent) / len(recent) * index
+
+
+# ---- checking itself -------------------------------------------------------------------------------------------
+CHECK_DAYS = 28  # recent days the forecast replays to judge itself
+HORIZON = 7
+DRIFT = 1.5  # last week's error this many times its usual error = something changed
+
+
+def replay(history: dict[dt.date, float], today: dt.date, days: int = CHECK_DAYS, weeks: int = WEEKS, bias: float = 1.0) -> list[tuple[dt.date, float, float]]:
+    """(day, forecast, actual) for each of the last `days` days: every forecast made 1 to 7 days ahead from only the
+    days before it, exactly as the app would have made it then."""
+    out = []
+    for back in range(days, 0, -1):
+        d = today - dt.timedelta(days=back)
+        if d not in history:
+            continue
+        for h in range(HORIZON):
+            origin = d - dt.timedelta(days=h)
+            p = level_weekday_forecast({k: v for k, v in history.items() if k < origin}, origin, d, weeks)
+            if p:
+                out.append((d, p * bias, history[d]))
+    return out
+
+
+def mape(rows) -> float | None:
+    return sum(abs(p - a) / a for _, p, a in rows if a) / len(rows) if rows else None
+
+
+def scorecard(history: dict[dt.date, float], today: dt.date) -> dict:
+    """How close the forecast has been, week by week over the last 4 weeks, whether it ran high or low, and whether
+    last week was off by much more than usual."""
+    rows = replay(history, today)
+    weeks = []
+    for w in range(CHECK_DAYS // 7, 0, -1):
+        lo, hi = today - dt.timedelta(days=7 * w), today - dt.timedelta(days=7 * (w - 1))
+        part = [r for r in rows if lo <= r[0] < hi]
+        if part:
+            weeks.append({"week_of": lo.isoformat(), "error": round(mape(part), 4),
+                          "lean": round(sum(a for *_, a in part) / sum(p for _, p, _ in part) - 1, 4)})
+    usual = sum(w["error"] for w in weeks[:-1]) / len(weeks[:-1]) if len(weeks) > 1 else None
+    drift = bool(usual and weeks[-1]["error"] > DRIFT * usual)
+    return {"weeks": weeks, "error": round(mape(rows), 4) if rows else None, "usual": round(usual, 4) if usual else None,
+            "drift": drift, "checked_days": len({d for d, *_ in rows})}
 
 
 def _history(db: Session, today: dt.date):
@@ -101,4 +150,5 @@ def forecast(db: Session, days: int = 7) -> dict:
     ingredients.sort(key=lambda r: (r["runs_out"] is None, r["runs_out"] or "", r["name"]))
     actual = [{"date": (today - dt.timedelta(days=k)).isoformat(), "sales": round(daily.get(today - dt.timedelta(days=k), 0), 2)} for k in range(14, 0, -1)]
     return {"days": out_days, "actual": actual, "tomorrow_items": [{"name": n, "qty": round(q)} for n, q in tomorrow[:8]],
-            "ingredients": ingredients, "method": f"Last {LEVEL_DAYS} days' average sales, adjusted for the weekday using the last {WEEKS} weeks."}
+            "ingredients": ingredients, "method": f"Last {LEVEL_DAYS} days' average sales, adjusted for the weekday using the last {WEEKS} weeks.",
+            "scorecard": scorecard(daily, today)}

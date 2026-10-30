@@ -202,6 +202,30 @@ function coachHtml(c) {
     </div></div>`;
 }
 
+// the forecast checks itself every day against what was really sold
+function scorecardHtml(c) {
+  if (!c || !c.weeks.length) return "";
+  const max = Math.max(...c.weeks.map((w) => w.error), 0.01);
+  const wk = (iso) => new Date(iso + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const lean = (x) => Math.abs(x) < 0.02 ? "on target" : x > 0 ? `forecast ${Math.round(x * 100)}% too low` : `forecast ${Math.round(-x * 100)}% too high`;
+  return `<div class="section"><h2>How close the forecast has been</h2><div class="panel">
+    ${c.drift ? `<div class="warn" style="margin-bottom:10px">Last week the forecast was off by ${Math.round(c.weeks.at(-1).error * 100)}%, more than its usual ${Math.round(c.usual * 100)}%. Something changed: an event, a promotion or a closed day? The next days may be off too.</div>` : ""}
+    ${c.weeks.map((w) => `<div class="addon"><span>Week of ${wk(w.week_of)}<br><span class="muted" style="font-size:12px">${lean(w.lean)}</span></span><div class="result"><div class="bar"><i style="width:${Math.round((w.error / max) * 100)}%"></i></div></div><b style="text-align:right">${Math.round(w.error * 100)}%</b></div>`).join("")}
+    <div class="muted" style="font-size:13px;margin-top:8px">Average gap between forecast and real sales, checked every day by replaying the last 4 weeks as the forecast would have seen them. Lower is better.</div>
+  </div></div>`;
+}
+
+// what the stock agent learned from your edits, deliveries and counts: suggestions you apply or not
+function learnedStock(l) {
+  if (!l.waiting.length && !l.applied.length) return "";
+  return `<div class="section"><h2>What the stock agent has learned</h2>
+    ${l.waiting.map((x) => `<div class="tipcard lesson"><div class="k">${ICONS.spark} Suggestion · from ${x.evidence} ${x.kind === "lead_time" ? "deliveries" : x.kind === "usage" ? "counts" : "orders"}</div>
+      <p>${esc(x.title)}</p><div class="cmp">${esc(x.detail)}</div>
+      <div class="row"><button class="brass" data-apply="${x.id}">Apply</button><button class="reject" data-dismiss="${x.id}">Not now</button></div></div>`).join("")}
+    ${l.applied.length ? `<div class="panel" style="margin-top:10px">${l.applied.map((x) => `<div class="list-item"><span>${esc(x.title)}<br><span class="muted">Applied ${new Date(x.at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span></span><span class="chip received">In use</span></div>`).join("")}</div>` : ""}
+    <div class="muted" style="font-size:13px;margin-top:8px">Nothing changes until you apply it. The agent keeps learning from every order you edit, every delivery you confirm and every count.</div></div>`;
+}
+
 // what the agent has learned about this person from past tips and reviews; it reads the same history each week
 function learnedHtml(p) {
   const h = p.history;
@@ -405,6 +429,7 @@ const VIEWS = {
       </div></div>
       <div class="section panel chart-card"><h3>Sales: last 14 days and next 7</h3><div class="sub">SAR · solid line is actual, dashed line is the forecast</div><div id="c-fc"></div>
         <details class="table"><summary>Show as table</summary><table><tr><th>Day</th><th>Forecast</th><th>Range</th></tr>${f.days.map((d) => `<tr><td>${day(d.date)}</td><td class="num">${sar(d.sales)}</td><td class="num">${sar(d.low)}–${sar(d.high)}</td></tr>`).join("")}</table></details></div>
+      ${scorecardHtml(f.scorecard)}
       <div class="section panel chart-card"><h3>Tomorrow's prep</h3><div class="sub">Expected items sold, ${day(f.days[1].date, { weekday: "long" })}</div><div id="c-prep"></div></div>
       <div class="section"><h2>Ingredients for the next 7 days</h2><div class="panel">
         ${f.ingredients.map((i) => `<div class="list-item"><span>${esc(i.name)}<br><span class="muted">Need ${fmt(Math.ceil(i.need))} ${i.unit} · on hand ${fmt(i.on_hand)} ${i.unit}</span></span>${i.runs_out ? `<span class="chip negative">Runs out ${day(i.runs_out, { weekday: "short" })}</span>` : '<span class="chip received">Enough</span>'}</div>`).join("")}
@@ -598,7 +623,8 @@ const VIEWS = {
         <p class="because">${esc(l.change.reason)}</p>
         <button class="link undo" data-undo="${l.change.from}" data-line="${l.id}">Change it back to ${fmt(l.change.from)} ${l.unit}</button></div>`;
       return `<div class="ln"><span class="n">${esc(l.ingredient)}</span><span class="q">${draft ? input : `<b class="num">${fmt(l.qty)}</b> ${l.unit}`}</span>
-        ${draft && l.reason ? `<p class="why">${esc(l.reason)}</p>` : ""}</div>`;
+        ${draft && l.reason ? `<p class="why">${esc(l.reason)}</p>` : ""}
+        ${draft && l.suggestion ? `<div class="learned-hint">${ICONS.spark}<span><b>Learned: ${esc(l.suggestion.title.toLowerCase())}.</b> ${esc(l.suggestion.why.split(". ")[0])}.</span><button class="link" data-use="${l.suggestion.qty}" data-line="${l.id}">Use ${fmt(l.suggestion.qty)} ${l.unit}</button></div>` : ""}</div>`;
     };
     // the agent's note often repeats each line's reason (rules mode always does); show it only when it adds something
     const extraNote = (po) => {
@@ -669,7 +695,7 @@ const VIEWS = {
   },
 
   async stock() {
-    const [rows, runs] = await Promise.all([api("/api/stock"), api("/api/agents/runs")]);
+    const [rows, runs, learned] = await Promise.all([api("/api/stock"), api("/api/agents/runs"), api("/api/lessons")]);
     window._stk = rows;
     const run = runs.find((r) => r.agent === "stock");
     const n = (f) => rows.filter(STOCK_FILTERS[f].test).length;
@@ -677,6 +703,7 @@ const VIEWS = {
     return `<div class="section first"><div class="panel strip"><span class="badge sm">${ICONS.stockAgent}</span>
         <div><b>Stock agent</b><small>${run ? `Last check ${timeOf(run.at)} · ${byWhom(run)}` : "No check yet today"}</small></div>
         <button class="secondary-btn" id="run-agent">Run check</button></div></div>
+      ${learnedStock(learned)}
       <div class="section stk-tools">
         <div class="stk-filters" role="group" aria-label="Show">${Object.entries(STOCK_FILTERS).map(([k, f]) => `<button data-sf="${k}" aria-pressed="${k === stockFilter}" class="${k}">${f.label}<b class="num">${n(k)}</b></button>`).join("")}</div>
         <label class="stk-search">${ICONS.search}<input id="stk-q" type="search" placeholder="Search ingredients" value="${esc(stockQuery)}" autocomplete="off"></label>
@@ -957,6 +984,12 @@ const BIND = {
   },
   stock() {
     bindAgent();
+    document.querySelectorAll("[data-apply]").forEach((b) => (b.onclick = async () => {
+      try { await api(`/api/lessons/${b.dataset.apply}/apply`, { method: "POST" }); toast("Applied. Future orders use it."); render(); } catch (e) { toast(e.message, true); }
+    }));
+    document.querySelectorAll("[data-dismiss]").forEach((b) => (b.onclick = async () => {
+      try { await api(`/api/lessons/${b.dataset.dismiss}/dismiss`, { method: "POST" }); toast("Left as it is"); render(); } catch (e) { toast(e.message, true); }
+    }));
     const draw = () => {
       $("stk-list").innerHTML = stockList();
       $("stk-list").querySelectorAll("[data-stk]").forEach((b) => (b.onclick = () => { stockOpen = stockOpen === +b.dataset.stk ? null : +b.dataset.stk; draw(); }));
@@ -978,6 +1011,10 @@ const BIND = {
   },
   orders() {
     bindAgent();
+    document.querySelectorAll("[data-use]").forEach((b) => (b.onclick = () => {
+      document.querySelector(`input.qty[data-line="${b.dataset.line}"]`).value = b.dataset.use;
+      toast("Changed. It's sent only when you approve.");
+    }));
     document.querySelectorAll("[data-undo]").forEach((b) => (b.onclick = () => {
       const input = document.querySelector(`input.qty[data-line="${b.dataset.line}"]`);
       input.value = b.dataset.undo; toast("Set back to the rules' amount");

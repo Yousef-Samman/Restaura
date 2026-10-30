@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from .. import forecast
 from ..models import AgentRun, PurchaseOrder, PurchaseOrderLine
 from ..stock import items_without_recipe, plan_reorders, stock_report
+from . import stock_memory
 from .llm import LLM
 
 SYSTEM = (
@@ -25,7 +26,8 @@ SYSTEM = (
     "stock level almost always means a delivery was not recorded; an ingredient that will run out before its "
     "supplier can deliver is urgent; a menu item with no recipe never reduces stock; the forecast may show an "
     "ingredient running short this week that is not low yet. Use plain words, no jargon and no tool or field names, and only facts from the "
-    "tools. Copy numbers exactly as the tools give them; never do your own arithmetic, because a number the manager "
+    "tools. Also check what you learned from earlier orders; suggestions waiting for the manager are theirs to apply, "
+    "so mention them in the headline but never act on them. Copy numbers exactly as the tools give them; never do your own arithmetic, because a number the manager "
     "can't find on the order makes the briefing harder to trust."
 )
 
@@ -41,6 +43,10 @@ TOOLS = [
      "day it runs out. Compare by_day with the 7-day average use the order is based on.", "input_schema": _NONE},
     {"name": "check_open_orders", "description": "Supplier orders that are drafted or sent but not received yet.",
      "input_schema": _NONE},
+    {"name": "check_what_i_learned", "description": "What you learned from earlier orders: the manager's edits to your "
+     "drafts, how many days each supplier really takes to deliver, and stock counts against the recipes. Lessons the "
+     "manager applied are already in the plan's quantities. Suggestions still waiting are for the manager to decide: "
+     "never change a quantity because of one; mention them in the briefing instead.", "input_schema": _NONE},
     {"name": "check_recipes", "description": "Menu items that have no recipe, so their sales don't reduce any stock.",
      "input_schema": _NONE},
     {"name": "get_reorder_plan", "description": "The ingredients that need ordering today, with the quantity code "
@@ -98,6 +104,7 @@ class _Check:
         self.staged: dict[str, dict] = {}  # supplier -> {"lines": [plan rows], "note": str}
         self.finished: dict | None = None
         self.trace: list[dict] = []
+        self.waiting: list = []
 
     def step(self, label: str, detail: str, ok: bool = True) -> None:
         self.trace.append({"label": label, "detail": detail, "ok": ok})
@@ -135,6 +142,13 @@ class _Check:
             return [{"supplier": po.supplier.name, "status": po.status,
                      "lines": [{"ingredient": l.ingredient.name, "qty": l.qty, "unit": l.ingredient.unit} for l in po.lines]}
                     for po in pos], True
+        if name == "check_what_i_learned":
+            waiting, used = stock_memory.refresh(self.db), stock_memory.applied(self.db)
+            self.waiting = waiting
+            self.step("Checked what it has learned", f"{_plural(len(waiting), 'new suggestion')} for you"
+                      + (f": {'; '.join(l.title for l in waiting[:3])}" if waiting else "") + (f"; {len(used)} already applied" if used else ""))
+            return {"waiting_for_the_manager": [{"title": l.title, "detail": l.detail} for l in waiting],
+                    "applied": [{"title": l.title} for l in used]}, True
         if name == "check_recipes":
             missing = items_without_recipe(self.db)
             self.step("Checked recipes", f"{_plural(len(missing), 'menu item')} without a recipe" if missing
@@ -204,12 +218,14 @@ class _Check:
 
     def rules(self) -> None:
         """The same tools in a fixed order, with notes and warnings written by code."""
-        for tool in ("check_stock", "check_open_orders", "check_recipes", "get_reorder_plan"):
+        for tool in ("check_stock", "check_open_orders", "check_what_i_learned", "check_recipes", "get_reorder_plan"):
             self.call(tool, {})
         for supplier, lines in self.by_supplier.items():
             self._draft(supplier, [p["ingredient"].name for p in lines], " ".join(f"{p['ingredient'].name}: {p['reason']}" for p in lines))
         headline = (f"{_plural(len(self.staged), 'supplier order')} drafted for {_plural(len(self.plan), 'ingredient')}. "
                     "Waiting for your approval." if self.plan else "No ingredient is low. No orders needed today.")
+        if self.waiting:
+            headline += f" {_plural(len(self.waiting), 'thing')} I learned from past orders {'is' if len(self.waiting) == 1 else 'are'} waiting for you on Stock."
         self.call("finish", {"headline": headline, "warnings": self.computed_warnings()})
 
 
@@ -230,7 +246,7 @@ def run(db: Session, llm: LLM) -> dict:
     orders = []
     for supplier, staged in check.staged.items():
         po = PurchaseOrder(supplier=staged["lines"][0]["ingredient"].supplier, status="draft", note=staged["note"])
-        po.lines = [PurchaseOrderLine(ingredient=p["ingredient"], qty=p["qty"], reason=p["reason"] + (
+        po.lines = [PurchaseOrderLine(ingredient=p["ingredient"], qty=p["qty"], drafted_qty=p["qty"], reason=p["reason"] + (
             f"{CHANGE_MARK}{p['code_qty']:g} to {p['qty']:g} {p['ingredient'].unit}: {p['adjust_reason']}"
             if p["qty"] != p["code_qty"] else "")) for p in staged["lines"]]
         db.add(po)
