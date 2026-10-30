@@ -1,4 +1,4 @@
-const state = { menu: [], cat: null, q: "", cart: [], seq: 0 };
+const state = { menu: [], cat: null, q: "", cart: [], seq: 0, payments: [] };
 const $ = (id) => document.getElementById(id);
 const sar = (n) => `${Number(n).toFixed(0)} SAR`;
 const sar2 = (n) => `${Number(n).toFixed(2)} SAR`;
@@ -56,6 +56,9 @@ function render() { renderCats(); renderMenu(); }
 // so the helper is not called on every tap; the cashier can't reach payment without seeing them.
 const STEPS = [["order", "Order"], ["suggest", "AI suggestions"], ["pay", "Payment"]];
 const total = () => state.cart.reduce((s, l) => s + l.item.price * l.qty, 0);
+// part payments: cash short of the total is taken and the rest is paid by NearPay or more cash
+const paidSoFar = () => state.payments.reduce((s, p) => s + p.amount, 0);
+const remaining = () => Math.max(0, Math.round((total() - paidSoFar()) * 100) / 100);
 state.step = "order";
 
 function add(item, eventId = null) {
@@ -78,12 +81,15 @@ function renderCart() {
   const t = total(), n = state.cart.reduce((s, l) => s + l.qty, 0);
   $("count").textContent = n ? `${n} item${n > 1 ? "s" : ""}` : "";
   const at = STEPS.findIndex(([k]) => k === state.step || (k === "pay" && state.step === "cash"));
-  $("stepsbar").innerHTML = state.step === "paid" ? "" : STEPS.map(([k, label], i) => `<span class="${i < at ? "done" : i === at ? "now" : ""}"><i>${i + 1}</i>${label}</span>`).join("");
+  $("stepsbar").innerHTML = state.step === "paid" ? "" : STEPS.map(([k, label], i) =>
+    `<li class="${i < at ? "done" : i === at ? "now" : ""}"${i === at ? ' aria-current="step"' : ""}><i>${i < at ? ICONS.check : i + 1}</i><span>${label}</span></li>`).join("");
+  document.querySelector(".pos").classList.toggle("wide-order", state.step === "suggest");
   const pane = $("pane"), acts = $("actions");
   if (state.step === "paid") {
     const p = state.paid;
     pane.innerHTML = `<div class="paid"><span class="tick">${ICONS.check}</span><b>Paid · ${sar(p.total)}</b>
-      <span>Order #${p.id} · ${p.method === "card" ? "Card, NearPay" : `Cash · change ${sar2(p.change)}`}</span>
+      <span>Order #${p.id} · ${p.payments.map((x) => `${x.method === "card" ? "NearPay" : "Cash"} ${sar2(x.amount)}`).join(" + ")}</span>
+      ${p.change > 0 ? `<span>Change given ${sar2(p.change)}</span>` : ""}
       ${p.addons ? `<span>${p.addons} suggested add-on${p.addons > 1 ? "s" : ""} added</span>` : ""}</div>`;
     acts.innerHTML = `<button class="btn solid wide" id="next">Next customer</button>`;
     $("next").onclick = () => { state.paid = null; go("order"); };
@@ -93,28 +99,30 @@ function renderCart() {
     $("clear").onclick = () => { state.cart = []; state.suggest = null; renderCart(); };
     $("next").onclick = () => go("suggest");
   } else if (state.step === "suggest") {
-    pane.innerHTML = `<div class="sg" id="sg">${suggestHtml()}</div>`;
+    pane.innerHTML = `<div class="sg" id="sg">${suggestHtml()}</div><div class="sg-order"><div class="lbl">In the order</div><ul class="lines">${linesHtml()}</ul></div>`;
     acts.innerHTML = `<button class="btn ghost" id="back">Back</button><button class="btn solid" id="next">Go to payment</button>`;
     $("back").onclick = () => go("order");
     $("next").onclick = () => go("pay");
     bindSuggestions();
   } else if (state.step === "pay") {
-    pane.innerHTML = `<div class="pay"><div class="pay-h">How is the customer paying?</div>
+    const part = state.payments.length;
+    pane.innerHTML = `<div class="pay">${part ? `<div class="part"><span>Paid so far · ${state.payments.map((x) => `${x.method === "card" ? "NearPay" : "Cash"} ${sar2(x.amount)}`).join(" + ")}</span><b class="num">${sar2(remaining())} left to pay</b></div>` : ""}
+      <div class="pay-h">${part ? "How is the customer paying the rest?" : "How is the customer paying?"}</div>
       <button class="pay-opt" id="m-card"><span class="pi">${ICONS.card}</span><span><b>NearPay</b><small>Card or phone, tap on this iPad</small></span>${ICONS.chevron}</button>
       <button class="pay-opt" id="m-cash"><span class="pi">${ICONS.wallet}</span><span><b>Cash</b><small>Enter what the customer gives</small></span>${ICONS.chevron}</button></div>`;
-    acts.innerHTML = `<button class="btn ghost wide" id="back">Back to suggestions</button>`;
-    $("back").onclick = () => go("suggest");
+    acts.innerHTML = part ? `<button class="btn ghost wide" id="back">Undo part payment</button>` : `<button class="btn ghost wide" id="back">Back to suggestions</button>`;
+    $("back").onclick = () => { if (part) { state.payments = []; renderCart(); } else go("suggest"); };
     $("m-card").onclick = openTap;
     $("m-cash").onclick = () => { state.cash = ""; go("cash"); };
   } else if (state.step === "cash") {
-    const given = parseFloat(state.cash) || 0, change = given - t;
-    const quick = [...new Set([Math.ceil(t), Math.ceil(t / 10) * 10, Math.ceil(t / 50) * 50, Math.ceil(t / 100) * 100, 500])].filter((v) => v >= t).slice(0, 4);
-    pane.innerHTML = `<div class="cash"><div class="pay-h">Cash received</div>
+    const due = remaining(), given = parseFloat(state.cash) || 0, change = given - due;
+    const quick = [...new Set([Math.ceil(due), Math.ceil(due / 10) * 10, Math.ceil(due / 50) * 50, Math.ceil(due / 100) * 100, 500])].filter((v) => v >= due).slice(0, 4);
+    pane.innerHTML = `<div class="cash"><div class="pay-h">Cash received <span class="muted">· due ${sar2(due)}</span></div>
       <div class="cash-in num">${state.cash ? `${state.cash} SAR` : '<span class="muted">0 SAR</span>'}</div>
-      <div class="cash-quick">${quick.map((v) => `<button data-q="${v}">${v === Math.ceil(t) ? "Exact" : `${v}`}</button>`).join("")}</div>
+      <div class="cash-quick">${quick.map((v) => `<button data-q="${v}">${v === Math.ceil(due) ? "Exact" : `${v}`}</button>`).join("")}</div>
       <div class="keys cash-keys">${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"].map((k) => `<button data-k="${k}">${k}</button>`).join("")}</div>
-      <div class="change ${given >= t ? "ok" : ""}">${given >= t ? `Change to give back <b class="num">${sar2(change)}</b>` : given ? `${sar2(-change)} still to pay` : "Tap the amount the customer gave"}</div></div>`;
-    acts.innerHTML = `<button class="btn ghost" id="back">Back</button><button class="btn solid" id="next" ${given >= t ? "" : "disabled"}>Close the bill</button>`;
+      <div class="change ${given >= due ? "ok" : given ? "short" : ""}">${given >= due ? `Change to give back <b class="num">${sar2(change)}</b>` : given ? `Short by <b class="num">${sar2(-change)}</b>, the rest is paid next` : "Tap the amount the customer gave"}</div></div>`;
+    acts.innerHTML = `<button class="btn ghost" id="back">Back</button><button class="btn solid" id="next" ${given > 0 ? "" : "disabled"}>${given >= due || !given ? "Close the bill" : `Take ${sar2(given)} · pay the rest`}</button>`;
     pane.querySelectorAll("[data-q]").forEach((b) => (b.onclick = () => { state.cash = b.dataset.q; renderCart(); }));
     pane.querySelectorAll("[data-k]").forEach((b) => (b.onclick = () => {
       const k = b.dataset.k;
@@ -122,7 +130,10 @@ function renderCart() {
       renderCart();
     }));
     $("back").onclick = () => go("pay");
-    $("next").onclick = () => closeBill("cash", given - t);
+    $("next").onclick = () => {
+      if (given >= due) { state.payments.push({ method: "cash", amount: due }); closeBill(change).then((ok) => ok || state.payments.pop()); }
+      else { state.payments.push({ method: "cash", amount: given }); go("pay"); }
+    };
   }
   pane.querySelectorAll("[data-minus]").forEach((b) => (b.onclick = () => { const l = state.cart[+b.dataset.minus]; l.qty -= 1; if (!l.qty) state.cart.splice(+b.dataset.minus, 1); renderCart(); }));
   pane.querySelectorAll("[data-plus]").forEach((b) => (b.onclick = () => add(state.cart[+b.dataset.plus].item)));
@@ -155,8 +166,8 @@ function suggestHtml() {
   return head + sg.list.map((s, i) => {
     const added = state.cart.some((l) => l.eventId === s.event_id);
     return `<div class="sg-card${added ? " added" : ""}"><div class="sg-top"><b>${esc(s.name)}</b><span class="num">+${sar(s.price)}</span></div>
-      <p>“${esc(s.pitch)}”</p><button class="sg-add" data-sg="${i}" ${added ? "disabled" : ""}>${added ? `${ICONS.check}Added` : "Add to order"}</button></div>`;
-  }).join("") + `<div class="sg-list"><span class="lbl">In the order</span>${state.cart.map((l) => `<span>${l.qty}× ${esc(l.item.name)}</span>`).join("")}</div>`;
+      <p>“${esc(s.pitch)}”</p><button class="sg-add" data-sg="${i}" ${added ? "disabled" : ""}>${added ? `${ICONS.check}Added` : "+ Add"}</button></div>`;
+  }).join("");
 }
 
 function bindSuggestions() {
@@ -168,30 +179,30 @@ function bindSuggestions() {
 
 // NearPay: on this iPad the card or phone is tapped on the screen; in the demo a button stands in for the tap
 function openTap() {
-  const t = total();
+  const t = remaining();
   $("tap-amt").textContent = sar2(t);
   $("tap-amt-ar").textContent = `${t.toLocaleString("ar-SA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ر.س`;
-  $("tap-dots").innerHTML = '<i class="on"></i><i></i><i></i><i></i>';
   $("tap-say").innerHTML = '<b>Present card or phone</b><span lang="ar" dir="rtl">قدّم البطاقة أو الجوال</span>';
   $("tap").className = "tap"; $("tap").hidden = false; $("tap-sim").disabled = false;
 }
 async function tapped() {
   $("tap-sim").disabled = true;
-  const dots = [...$("tap-dots").children];
+  $("tap").className = "tap reading";
   $("tap-say").innerHTML = '<b>Reading card…</b><span lang="ar" dir="rtl">جارٍ قراءة البطاقة</span>';
-  for (let i = 1; i < 4; i++) { await new Promise((r) => setTimeout(r, 450)); dots[i].className = "on"; }
-  const ok = await closeBill("card", 0);
-  if (!ok) { $("tap").hidden = true; return; }
+  await new Promise((r) => setTimeout(r, 1400));
+  state.payments.push({ method: "card", amount: remaining() });
+  const ok = await closeBill(0);
+  if (!ok) { state.payments.pop(); $("tap").hidden = true; return; }
   $("tap").className = "tap ok";
   $("tap-say").innerHTML = '<b>Approved</b><span lang="ar" dir="rtl">تمت الموافقة</span>';
-  setTimeout(() => { $("tap").hidden = true; }, 1300);
+  setTimeout(() => { $("tap").hidden = true; }, 1600);
 }
 
-async function closeBill(method, change) {
+async function closeBill(change) {
   try {
     const out = await api("/api/orders", { method: "POST", body: JSON.stringify({ lines: state.cart.map((l) => ({ item_id: l.item.id, qty: l.qty, suggestion_event_id: l.eventId })) }) });
-    state.paid = { id: out.order_id, total: out.total, method, change, addons: state.cart.filter((l) => l.eventId).length };
-    state.cart = []; state.suggest = null; state.step = "paid";
+    state.paid = { id: out.order_id, total: out.total, payments: state.payments, change, addons: state.cart.filter((l) => l.eventId).length };
+    state.cart = []; state.suggest = null; state.payments = []; state.step = "paid";
     renderCart();
     state.menu = await api("/api/menu");
     render();

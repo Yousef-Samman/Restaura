@@ -36,7 +36,7 @@
   </section>
   <aside class="order" aria-label="Current order">
     <header><h2>Current order</h2><span class="muted num" id="count"></span></header>
-    <div class="steps-bar" id="stepsbar"></div>
+    <ol class="steps-bar" id="stepsbar" aria-label="Order steps"></ol>
     <div class="pane" id="pane"></div>
     <div class="totals">
       <div class="r"><span>Subtotal (excl. VAT)</span><span class="num" id="subtotal">0.00 SAR</span></div>
@@ -55,8 +55,13 @@
 <div class="tap" id="tap" hidden>
   <div class="tap-card" role="dialog" aria-modal="true" aria-labelledby="tap-amt">
     <div class="tap-top"><span class="tap-brand">NearPay · Tap to pay</span><button class="tap-x" id="tap-cancel" aria-label="Cancel payment">Cancel</button></div>
-    <div class="tap-dots" id="tap-dots"><i class="on"></i><i></i><i></i><i></i></div>
-    <div class="tap-ring" id="tap-ring"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="16" y="6" width="32" height="52" rx="7" fill="none" stroke="currentColor" stroke-width="3"/><path d="M27 26a8 8 0 0 1 0 12M32 22a14 14 0 0 1 0 20M37 18a20 20 0 0 1 0 28" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></div>
+    <div class="tap-stage" aria-hidden="true">
+      <span class="tap-wave"></span><span class="tap-wave w2"></span>
+      <div class="tap-pad"><svg viewBox="0 0 48 48"><path d="M17 15a13 13 0 0 1 0 18M23.5 10.5a20 20 0 0 1 0 27M30 6a27 27 0 0 1 0 36" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><circle cx="11" cy="24" r="2.6" fill="currentColor"/></svg></div>
+      <svg class="tap-spin" viewBox="0 0 120 120"><circle cx="60" cy="60" r="56" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-dasharray="90 262"/></svg>
+      <div class="tap-cardart"><i class="chip"></i><i class="cl"></i><b>•••• 4821</b></div>
+      <div class="tap-done"><svg viewBox="0 0 48 48"><path d="M14 25l7 7 14-15" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    </div>
     <div class="tap-say" id="tap-say"><b>Present card or phone</b><span lang="ar" dir="rtl">قدّم البطاقة أو الجوال</span></div>
     <div class="tap-amt num" id="tap-amt">0.00 SAR</div>
     <div class="tap-ar num" lang="ar" dir="rtl" id="tap-amt-ar"></div>

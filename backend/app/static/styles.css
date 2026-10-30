@@ -718,12 +718,6 @@ body.has-hero .mgr-top { padding-bottom: 10px; }
 .who-line { font-size: 14px; color: var(--muted); margin-bottom: 4px; }
 
 /* cashier: step bar, panes, suggestions, payment */
-.steps-bar { display: flex; gap: 6px; padding: 0 22px 10px; }
-.steps-bar span { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: var(--muted); padding: 7px 8px; border-radius: 10px; background: var(--cloud); }
-.steps-bar i { font-style: normal; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--paper); font-size: 11px; flex: none; }
-.steps-bar .now { background: var(--brass-tint); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--brass); }
-.steps-bar .now i { background: var(--brass); color: var(--ink); }
-.steps-bar .done { color: var(--ok); } .steps-bar .done i { background: var(--ok); color: #fff; }
 .pane { flex: 1; min-height: 0; overflow-y: auto; padding: 0 22px; display: flex; flex-direction: column; }
 .pane .lines { padding: 0; margin: 0; }
 .pane .empty-order { display: flex; flex-direction: column; align-items: center; gap: 8px; }
@@ -768,18 +762,70 @@ body.has-hero .mgr-top { padding-bottom: 10px; }
 .tap-top { width: 100%; display: flex; justify-content: space-between; align-items: center; }
 .tap-brand { font-weight: 800; font-size: 13px; letter-spacing: .04em; color: var(--brass-text); }
 .tap-x { font-weight: 700; color: var(--muted); }
-.tap-dots { display: flex; gap: 8px; }
-.tap-dots i { width: 14px; height: 14px; border-radius: 50%; background: var(--line); transition: background .2s; }
-.tap-dots i.on { background: var(--brand-2); }
-.tap-ring { width: 150px; height: 150px; border-radius: 50%; display: grid; place-items: center; color: var(--brand); background: radial-gradient(circle, var(--brand-soft) 55%, transparent 56%); position: relative; }
-.tap-ring::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 3px solid var(--brass); opacity: .5; animation: tapPulse 1.6s ease-out infinite; }
-.tap-ring svg { width: 74px; height: 74px; }
-@keyframes tapPulse { from { transform: scale(.75); opacity: .7; } to { transform: scale(1.1); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .tap-ring::after { animation: none; } }
 .tap-say b { display: block; font-size: 19px; } .tap-say span { font-family: "Noto Sans Arabic", sans-serif; color: var(--muted); font-size: 15px; }
 .tap-amt { font-size: 32px; font-weight: 800; }
 .tap-ar { font-family: "Noto Sans Arabic", sans-serif; color: var(--muted); margin-top: -10px; }
 .tap-card .btn.solid { width: 100%; }
-.tap.ok .tap-ring { background: radial-gradient(circle, var(--ok-bg) 55%, transparent 56%); color: var(--ok); }
-.tap.ok .tap-ring::after { animation: none; opacity: 0; }
 .actions .btn.wide, .actions > .wide { grid-column: 1 / -1; }
+
+/* round 4: stepper, wider order panel while offering suggestions, part payments, tap animation */
+.pos { transition: grid-template-columns .35s cubic-bezier(.2,.8,.2,1); }
+.pos.wide-order { grid-template-columns: 96px minmax(0, 1fr) 500px; }
+@media (max-width: 1180px) { .pos.wide-order { grid-template-columns: 84px minmax(0, 1fr) 440px; } }
+.steps-bar { list-style: none; margin: 0; padding: 4px 22px 14px; display: grid; grid-template-columns: repeat(3, 1fr); }
+.steps-bar li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; }
+.steps-bar li + li::before { content: ""; position: absolute; top: 13px; right: calc(50% + 19px); left: calc(-50% + 19px); height: 2px; border-radius: 2px; background: var(--line); }
+.steps-bar li.done + li::before { background: var(--ok); }
+.steps-bar i { font-style: normal; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; background: var(--paper); box-shadow: inset 0 0 0 2px var(--line); color: var(--muted); transition: background .2s, box-shadow .2s; }
+.steps-bar i svg { width: 15px; height: 15px; }
+.steps-bar span { white-space: nowrap; line-height: 1.2; }
+.steps-bar .now { color: var(--ink); }
+.steps-bar .now i { background: var(--brass); color: var(--ink); box-shadow: 0 0 0 4px var(--brass-tint); }
+.steps-bar .done { color: var(--ok); }
+.steps-bar .done i { background: var(--ok); color: #fff; box-shadow: none; }
+.sg-order { margin-top: 6px; display: flex; flex-direction: column; gap: 8px; }
+.sg-order .lbl { font-weight: 800; text-transform: uppercase; letter-spacing: .06em; font-size: 11px; color: var(--muted); }
+.part { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 14px; background: var(--brass-tint); border: 1.5px solid var(--brass-line); margin-bottom: 4px; }
+.part span { font-size: 13px; color: var(--muted); } .part b { font-size: 18px; }
+.change.short { background: var(--brass-tint); color: var(--brass-text); }
+.pay-h .muted { font-weight: 600; }
+.tap-stage { position: relative; width: 210px; height: 170px; display: grid; place-items: center; color: var(--brand); }
+.tap-pad { width: 112px; height: 112px; border-radius: 50%; background: var(--brand-soft); display: grid; place-items: center; position: relative; z-index: 1; transition: background .3s, transform .3s; }
+.tap-pad svg { width: 54px; height: 54px; }
+.tap-pad path { animation: tapArc 1.8s ease-in-out infinite; }
+.tap-wave { position: absolute; width: 112px; height: 112px; border-radius: 50%; border: 2px solid var(--brand-2); opacity: 0; animation: tapWave 2.4s ease-out infinite; }
+.tap-wave.w2 { animation-delay: 1.2s; }
+.tap-cardart { position: absolute; z-index: 2; width: 92px; height: 58px; border-radius: 10px; background: linear-gradient(135deg, #3E4D25, #667A3E 60%, #7E9150); box-shadow: 0 10px 22px rgba(46,58,28,.28); right: -6px; bottom: 4px; transform-origin: 50% 50%; animation: cardTap 2.4s cubic-bezier(.45,.05,.25,1) infinite; }
+.tap-cardart .chip { position: absolute; left: 10px; top: 14px; width: 16px; height: 12px; border-radius: 3px; background: linear-gradient(135deg, #D9BC72, #B8923F); }
+.tap-cardart .cl { position: absolute; right: 10px; top: 12px; width: 10px; height: 14px; border: 2px solid rgba(255,255,255,.7); border-left: 0; border-radius: 0 10px 10px 0; }
+.tap-cardart b { position: absolute; left: 10px; bottom: 8px; color: rgba(255,255,255,.9); font-size: 9px; letter-spacing: .08em; }
+.tap-spin { position: absolute; width: 136px; height: 136px; color: var(--brass); opacity: 0; transition: opacity .2s; }
+.tap-done { position: absolute; z-index: 3; width: 112px; height: 112px; border-radius: 50%; background: var(--ok); color: #fff; display: grid; place-items: center; transform: scale(.4); opacity: 0; }
+.tap-done svg { width: 54px; height: 54px; } .tap-done path { stroke-dasharray: 40; stroke-dashoffset: 40; }
+@keyframes cardTap {
+  0% { transform: translate(40px, 30px) rotate(14deg); opacity: 0; }
+  18% { opacity: 1; }
+  45%, 62% { transform: translate(-65px, -52px) rotate(-4deg) scale(.94); opacity: 1; }
+  85%, 100% { transform: translate(40px, 30px) rotate(14deg); opacity: 0; }
+}
+@keyframes tapWave { from { transform: scale(1); opacity: .55; } to { transform: scale(1.55); opacity: 0; } }
+@keyframes tapArc { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes tapSpin { to { transform: rotate(360deg); } }
+@keyframes tapPop { 0% { transform: scale(.4); opacity: 0; } 70% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes tapDraw { to { stroke-dashoffset: 0; } }
+.tap.reading .tap-cardart { animation: none; transform: translate(-65px, -52px) rotate(-4deg) scale(.94); opacity: 1; transition: transform .3s; }
+.tap.reading .tap-wave, .tap.ok .tap-wave { animation: none; opacity: 0; }
+.tap.reading .tap-spin { opacity: 1; animation: tapSpin .9s linear infinite; }
+.tap.ok .tap-cardart { animation: none; opacity: 0; transition: opacity .2s; }
+.tap.ok .tap-done { animation: tapPop .45s cubic-bezier(.2,.9,.3,1.3) forwards; }
+.tap.ok .tap-done path { animation: tapDraw .35s .25s ease-out forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .tap-cardart, .tap-wave, .tap-pad path, .tap.reading .tap-spin { animation: none !important; }
+  .tap-cardart { transform: translate(-65px, -52px) rotate(-4deg); opacity: 1; }
+  .tap.ok .tap-done, .tap.ok .tap-done path { animation-duration: .01s; }
+}
+.sg-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; padding: 12px 14px; }
+.sg-card .sg-top { grid-column: 1; justify-content: flex-start; } .sg-card p { grid-column: 1; font-size: 14px; color: var(--muted); }
+.sg-card .sg-add { grid-column: 2; grid-row: 1 / span 2; padding: 0 16px; height: 42px; }
+.tap.ok .tap-x, .tap.ok #tap-sim, .tap.reading #tap-sim { visibility: hidden; }
+.sg-top span { white-space: nowrap; }
