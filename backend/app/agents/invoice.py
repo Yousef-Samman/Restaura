@@ -7,10 +7,12 @@ from .llm import LLM, image_block
 
 SYSTEM = (
     "You read photos of supplier invoices for a restaurant. Extract every line exactly as printed. "
-    "Match each line to one of the restaurant's ingredient names when it is clearly the same product, otherwise "
-    "use null. Never guess a number you cannot read: use null and add a note. Convert the delivered quantity into "
-    "the ingredient's unit (g, ml or pcs) only when the pack size is printed on the line; otherwise leave "
-    "qty_in_unit null."
+    "Match each line to one of the restaurant's ingredient names when it is the same product, even if the brand, "
+    "pack size or wording differ (for example 'Almarai Full Fat Milk 1L' is Milk); otherwise use null. Never guess a number you cannot read: use null and add a note. For matched lines, convert the "
+    "delivered quantity into the ingredient's unit (g, ml or pcs) in qty_in_unit when the line gives a weight or "
+    "volume (for example 6 KG is 6000 g, 2.85L is 2850 ml) or prints the pack size (20 x 2.85L is 57000 ml). "
+    "When the line only gives packs, boxes or cases with no size printed, or converting would mean turning a volume "
+    "into a weight, leave qty_in_unit null."
 )
 
 
@@ -54,6 +56,7 @@ def read(db: Session, llm: LLM, data: bytes, media_type: str) -> dict | None:
         ids = {i.name: i.id for i in ings}
         for line in out["lines"]:
             line["ingredient_id"] = ids.get(line["ingredient"])
+            line["unit"] = units.get(line["ingredient"])
             if line["ingredient_id"] is None:
-                line["ingredient"] = None
+                line["ingredient"] = line["qty_in_unit"] = None
     return out
