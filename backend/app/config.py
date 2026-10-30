@@ -26,6 +26,8 @@ class Settings:
     # Demo accounts are created on first start. Set your own passwords before showing the app to anyone.
     manager_password: str = field(default_factory=lambda: os.getenv("MANAGER_PASSWORD", "manager-demo"))
     cashier_password: str = field(default_factory=lambda: os.getenv("CASHIER_PASSWORD", "cashier-demo"))
+    # Time of day (HH:MM, store time) when the stock check runs by itself, e.g. "23:30". Empty means only on demand.
+    nightly_stock_check: str | None = field(default_factory=lambda: os.getenv("NIGHTLY_STOCK_CHECK") or None)
     secure_cookies: bool = field(default_factory=lambda: os.getenv("SECURE_COOKIES", "0") == "1")
     seed_demo_data: bool = field(default_factory=lambda: os.getenv("SEED_DEMO_DATA", "1") == "1")
 

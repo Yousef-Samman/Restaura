@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from . import auth, evaluation, finance, forecast, mailer, routines, sales_report, staff as staffing, stock
+from . import nightly
 from .agents import cashier, invoice, overview, stock_agent
 from .agents.stock_agent import split_change
 from .agents.llm import LLM
@@ -111,6 +112,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             seed(db)
     llm = LLM(settings)
     app = FastAPI(title="Restaura", version="0.1.0")
+    if settings.nightly_stock_check:
+        stop_nightly = nightly.start(Session_, llm, nightly.parse_time(settings.nightly_stock_check))
+        app.add_event_handler("shutdown", stop_nightly.set)
 
     def get_db():
         with Session_() as db:

@@ -138,7 +138,7 @@ Open http://localhost:8000 and sign in. Each account gets its own screens:
 | `manager` | Any device, phone first | Today (overview), sales, supplier orders, stock, and under More: deliveries, forecast, expenses, routines, staff |
 | `cashier` | Only on a device the manager paired as the cashier iPad | The cashier screen, staff clock-in and daily checklists |
 
-Sample staff clock in on the iPad with PINs `1111` to `5555`. To pair the cashier iPad, sign in as the manager, tap **Pair a cashier iPad** and enter the 6-digit code on the iPad's sign-in page. Demo passwords come from `MANAGER_PASSWORD` and `CASHIER_PASSWORD` (see [`.env.example`](.env.example)); set your own before sharing the app. The app starts with sample data. Without `ANTHROPIC_API_KEY` the agents run in rules mode; set the key (see [`.env.example`](.env.example)) to switch them to Claude.
+Sample staff clock in on the iPad with PINs `1111` to `5555`. To pair the cashier iPad, sign in as the manager, tap **Pair a cashier iPad** and enter the 6-digit code on the iPad's sign-in page. Demo passwords come from `MANAGER_PASSWORD` and `CASHIER_PASSWORD` (see [`.env.example`](.env.example)); set your own before sharing the app. The app starts with sample data. Without `ANTHROPIC_API_KEY` the agents run in rules mode; set the key (see [`.env.example`](.env.example)) to switch them to Claude. Set `NIGHTLY_STOCK_CHECK=23:30` (store time) and the stock agent runs by itself after closing, so the draft orders are waiting for the manager's approval in the morning; nothing is sent without approval.
 
 
 ## Stack
