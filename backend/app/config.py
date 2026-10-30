@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class Settings:
     database_url: str = field(default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///./restaura.db"))
-    anthropic_api_key: str | None = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY") or None)
+    anthropic_api_key: str | None = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY") or os.getenv("RESTAURA_ANTHROPIC_API_KEY") or None)
     model: str = field(default_factory=lambda: os.getenv("RESTAURA_MODEL", "claude-opus-5-5"))
     store_name: str = field(default_factory=lambda: os.getenv("STORE_NAME", "Demo Store"))
     smtp_host: str | None = field(default_factory=lambda: os.getenv("SMTP_HOST") or None)
