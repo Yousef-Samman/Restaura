@@ -84,6 +84,7 @@ def open_order_ingredients(db: Session) -> set[int]:
 
 def stock_report(db: Session) -> list[dict]:
     use = avg_daily_use(db)
+    ordered = open_order_ingredients(db)
     out = []
     for ing in db.scalars(select(Ingredient).order_by(Ingredient.name)):
         daily = use.get(ing.id, 0.0)
@@ -94,6 +95,7 @@ def stock_report(db: Session) -> list[dict]:
             "avg_daily_use": round(daily, 1),
             "days_left": round(ing.on_hand / daily, 1) if daily > 0 else None,
             "lead_days": ing.supplier.lead_days, "status": status, "reason": reason,
+            "on_order": ing.id in ordered,
         })
     return out
 

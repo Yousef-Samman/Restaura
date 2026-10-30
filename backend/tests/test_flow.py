@@ -151,6 +151,11 @@ def test_low_when_stock_runs_out_before_delivery(client):
     client.post("/api/agents/stock/run")
     lines = [l["ingredient"] for po in client.get("/api/purchase-orders").json() for l in po["lines"]]
     assert "Milk" in lines
-    assert any("low" in p["text"] for p in client.get("/api/overview").json()["priorities"])
+    # still low, but now handled by the draft order: the overview points to Orders, not Stock
+    milk = {r["name"]: r for r in client.get("/api/stock").json()}["Milk"]
+    assert milk["status"] == "low" and milk["on_order"]
+    overview = client.get("/api/overview").json()
+    assert "Milk" in overview["facts"]["low_stock_order_on_the_way"]
+    assert any(p["go"] == "orders" for p in overview["priorities"])
     menu = {i["name"]: i for i in client.get("/api/menu").json()}
     assert menu["Latte"]["available"]
