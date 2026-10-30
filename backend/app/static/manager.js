@@ -290,7 +290,7 @@ const VIEWS = {
       const minPct = (r.min_level / r.par_level) * 100;
       return `<div class="stock-row"><span class="n">${esc(r.name)}</span><span class="chip ${r.status}">${r.status === "ok" ? "OK" : r.status}</span>
         <div class="meter ${r.status}"><i style="width:${pct}%"></i><b style="left:${minPct}%"></b></div>
-        <span class="d num">${fmt(r.on_hand)} ${r.unit} on hand · min ${fmt(r.min_level)} · ${r.days_left == null ? "no recent use" : `${r.days_left} days left`} · ${esc(r.supplier)}${r.status === "low" && r.reason ? `<br><b>Low: ${esc(r.reason)}</b> (${r.lead_days}-day delivery)` : ""}</span></div>`;
+        <span class="d num">${fmt(r.on_hand)} ${r.unit} on hand · min ${fmt(r.min_level)} · ${r.days_left == null ? "no recent use" : `${r.days_left} days left`} · ${esc(r.supplier)}${r.status === "low" && r.reason ? `<br><b>Low: ${esc(r.reason)}</b> (${r.lead_days}-day delivery)${r.on_order ? " · order on the way" : ""}` : ""}</span></div>`;
     };
     return `<div class="section">${agentCard(runs.find((r) => r.agent === "stock"))}</div>
       <div class="section"><h2>Ingredients</h2><div class="panel">${rows.map(row).join("")}</div></div>
@@ -463,13 +463,19 @@ const BIND = {
       const fd = new FormData(); fd.append("file", e.target.files[0]);
       try {
         const r = await api("/api/invoices/read", { method: "POST", body: fd });
-        const ok = r.lines.filter((l) => l.ingredient_id && l.qty_in_unit);
+        // matched lines get a quantity box: Claude fills it when the invoice shows a weight, volume or pack size,
+        // otherwise the manager types what arrived
+        const matched = r.lines.filter((l) => l.ingredient_id);
         out.innerHTML = `<div class="po" style="margin-top:12px"><div class="top"><span class="sup">${esc(r.supplier_name || "Supplier")}</span><span class="muted">${esc(r.invoice_number || "")}</span></div>
-          <table>${r.lines.map((l) => `<tr><td>${esc(l.description)}${l.ingredient ? `<br><span class="muted">→ ${esc(l.ingredient)}</span>` : '<br><span class="muted">not matched</span>'}</td><td class="q">${l.qty_in_unit ?? "?"}</td></tr>`).join("")}</table>
+          <table>${r.lines.map((l) => `<tr><td>${esc(l.description)}${l.quantity != null ? ` <span class="muted num">× ${fmt(l.quantity)}</span>` : ""}${l.ingredient ? `<br><span class="muted">→ ${esc(l.ingredient)}</span>` : '<br><span class="muted">not matched</span>'}</td><td class="q">${l.ingredient_id
+            ? `<input class="qty num" type="number" min="0" step="any" value="${l.qty_in_unit ?? ""}" placeholder="?" data-ing="${l.ingredient_id}" aria-label="Quantity of ${esc(l.ingredient)} received"> ${esc(l.unit)}`
+            : "–"}</td></tr>`).join("")}</table>
           ${r.notes.map((n) => `<div class="note">${esc(n)}</div>`).join("")}
-          ${ok.length ? `<div class="btns"><button class="approve" id="inv-ok">Add ${ok.length} matched line(s) to stock</button></div>` : ""}</div>`;
+          ${matched.length ? `<div class="btns"><button class="approve" id="inv-ok">Add matched lines to stock</button></div>` : ""}</div>`;
         $("inv-ok")?.addEventListener("click", async () => {
-          await api("/api/deliveries", { method: "POST", body: JSON.stringify({ lines: ok.map((l) => ({ ingredient_id: l.ingredient_id, qty: l.qty_in_unit })), invoice_ref: r.invoice_number }) });
+          const lines = [...out.querySelectorAll("input[data-ing]")].map((i) => ({ ingredient_id: +i.dataset.ing, qty: parseFloat(i.value) })).filter((l) => l.qty > 0);
+          if (!lines.length) return toast("Enter the quantity received for at least one line", true);
+          await api("/api/deliveries", { method: "POST", body: JSON.stringify({ lines, invoice_ref: r.invoice_number }) });
           toast("Delivery added to stock"); render();
         });
       } catch (err) { out.innerHTML = ""; toast(err.message, true); }

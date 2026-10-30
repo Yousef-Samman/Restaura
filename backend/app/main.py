@@ -218,7 +218,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"date": d.isoformat(), "orders": orders, "sales": round(sales, 2),
                 "avg_ticket": round(sales / orders, 2) if orders else 0,
                 "suggestions_shown": shown, "suggestions_accepted": accepted, "suggested_sales": round(addon_sales, 2),
-                "low_stock": sum(r["status"] != "ok" for r in report),
+                # what still needs the manager: an ingredient with an order on the way is handled, unless it is below zero
+                "low_stock": sum(r["status"] == "negative" or (r["status"] == "low" and not r["on_order"]) for r in report),
                 "drafts": db.scalar(select(func.count(PurchaseOrder.id)).where(PurchaseOrder.status == "draft")) or 0}
 
     @app.post("/api/cashier/suggest")

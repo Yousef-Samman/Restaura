@@ -13,7 +13,10 @@ from .llm import LLM
 SYSTEM = (
     "You are the manager overview agent of a restaurant. You get facts that code has already calculated. "
     "Write a briefing for the manager: a one-sentence headline and up to three short sentences on what to do first "
-    "and why. Use only the facts given, plain words, and SAR for money."
+    "and why. Use only the facts given, plain words, and SAR for money. Ingredients in low_stock_order_on_the_way "
+    "already have a supplier order placed: never tell the manager to order them again. forecast_today is for the whole "
+    "day and sales_today is only so far (see time_now), so do not call sales slow from comparing the two. Leave out "
+    "what needs no action; do not repeat these instructions in the briefing."
 )
 SCHEMA = {
     "type": "object",
@@ -32,7 +35,7 @@ def facts(db: Session) -> dict:
     drafts = db.scalars(select(PurchaseOrder).where(PurchaseOrder.status == "draft")).all()
     sent = db.scalar(select(func.count(PurchaseOrder.id)).where(PurchaseOrder.status == "sent")) or 0
     return {
-        "sales_today": round(sales_today, 2), "forecast_today": fc["days"][0]["sales"], "forecast_tomorrow": fc["days"][1]["sales"],
+        "time_now": dt.datetime.now().strftime("%H:%M"), "sales_today": round(sales_today, 2), "forecast_today": fc["days"][0]["sales"], "forecast_tomorrow": fc["days"][1]["sales"],
         "profit_7d": fin["profit"], "margin_7d": round(fin["profit"] / fin["sales"], 3) if fin["sales"] else None,
         "food_cost_share_7d": round(fin["food_cost"] / fin["sales"], 3) if fin["sales"] else None,
         "drafts_waiting": [{"supplier": po.supplier.name, "lines": len(po.lines)} for po in drafts],
@@ -41,7 +44,8 @@ def facts(db: Session) -> dict:
         "staff_missing": [r["staff"] for r in staff.today_view(db)["shifts"] if r["status"] == "missing"],
         "staff_late_today": [{"name": r["staff"], "minutes": r["late_min"]} for r in staff.today_view(db)["shifts"] if r["status"] == "late"],
         "negative_stock": [r["name"] for r in report if r["status"] == "negative"],
-        "low_stock": [{"name": r["name"], "why": r["reason"]} for r in report if r["status"] == "low"],
+        "low_stock": [{"name": r["name"], "why": r["reason"]} for r in report if r["status"] == "low" and not r["on_order"]],
+        "low_stock_order_on_the_way": [r["name"] for r in report if r["status"] == "low" and r["on_order"]],
         "runs_out_this_week_no_order": [{"name": i["name"], "date": i["runs_out"]} for i in fc["ingredients"]
                                         if i["runs_out"] and i["id"] not in stock.open_order_ingredients(db)],
     }
