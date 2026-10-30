@@ -6,7 +6,7 @@ from collections import defaultdict
 from sqlalchemy.orm import Session
 
 from ..models import AgentRun, PurchaseOrder, PurchaseOrderLine
-from ..stock import plan_reorders, stock_report
+from ..stock import items_without_recipe, plan_reorders, stock_report
 from .llm import LLM
 
 SYSTEM = (
@@ -15,7 +15,8 @@ SYSTEM = (
     "a one-sentence headline, one plain sentence per draft order saying why it is needed, and warnings for "
     "anything that looks wrong in the data. A negative stock level almost always means a delivery was not "
     "recorded. An ingredient that will run out before its supplier can deliver is urgent. Use plain words, "
-    "no jargon, and only the facts given."
+    "no jargon, and only the facts given. Copy numbers exactly as they appear in the facts; never do your own "
+    "arithmetic, because a number the manager can't find on the order makes the briefing harder to trust."
 )
 
 SCHEMA = {
@@ -54,6 +55,8 @@ def run(db: Session, llm: LLM) -> dict:
     report = stock_report(db)
     warnings = [f"{r['name']} is below zero ({r['on_hand']} {r['unit']}). A delivery was probably not recorded."
                 for r in report if r["status"] == "negative"]
+    warnings += [f"{name} has no recipe, so its sales don't reduce stock. Add its recipe to keep stock right."
+                 for name in items_without_recipe(db)]
     urgent = [f"{p['ingredient'].name} may run out before {p['ingredient'].supplier.name} can deliver "
               f"({p['lead']}-day lead time)." for p in plan
               if p["daily"] and p["ingredient"].on_hand / p["daily"] < p["lead"]]

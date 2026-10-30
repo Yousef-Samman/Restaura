@@ -80,7 +80,7 @@ These sections are built and share the same database. The manager overview write
 | Section | What it does |
 | --- | --- |
 | Manager overview | Reads every section and ranks what needs the manager first, with a short briefing |
-| Forecast | Next 7 days of sales, tomorrow's prep and which ingredients will run out |
+| Forecast | Next 7 days of sales (recent level adjusted for the weekday, chosen by backtest), tomorrow's prep and which ingredients will run out |
 | Expenses | Monthly and one-off costs, supplier deliveries at cost, and estimated profit |
 | Routines | Opening, mid-shift and closing checklists ticked on the cashier iPad |
 | Staff | PIN clock-in on the cashier iPad, shifts, lateness and hours worked |
@@ -91,6 +91,30 @@ These sections are built and share the same database. The manager overview write
 - **Agents own a process, humans own decisions.** Anything that spends money or changes a record waits for approval.
 - **Grounded, not invented.** Agents work from the store's own sales, recipes and invoices.
 - **Explainable.** Every suggestion and every order shows why it was made.
+
+## Evaluation
+
+Every agent is tested on data it has not seen and compared with a simple method a person could use instead.
+One command runs it all and writes the report; CI runs it on every push.
+
+```bash
+cd backend
+pip install -e ".[dev,eval]"
+python -m pytest          # 60 tests: features, robustness, and regression checks on the evaluation
+python -m evals           # held-out evaluation, rules only (no key needed)
+python -m evals --ai      # also the Claude path, with a small model to keep costs low
+```
+
+Latest run, from [`backend/evals/RESULTS.md`](backend/evals/RESULTS.md):
+
+| Agent | Test | Simple method | Restaura |
+| --- | --- | --- | --- |
+| Cashier helper | Held-out week, store with its own pairing habits: one of 2 suggestions was really added | Best sellers 62.1% | Rules 86.6%, with Claude 88.2% |
+| Forecast | Real U Walk sales, last 6 weeks, average error over the next 7 days (lower is better) | Same day last week 23.8% | 20.8% (previous method 26.4%) |
+| Stock-to-order | Hand-worked scenario; 300 random stores | | 6/6 order lines exact; 100% recall and precision |
+| Invoice reader | Drawn invoices with known values: clean, blurry, phone photo, smudged | | 100% of lines read right in every condition; never guessed a covered number |
+
+What the tests found and what changed because of them: [`backend/evals/IMPROVEMENTS.md`](backend/evals/IMPROVEMENTS.md).
 
 ## Status
 
@@ -113,7 +137,6 @@ Open http://localhost:8000 and sign in. Each account gets its own screens:
 
 Sample staff clock in on the iPad with PINs `1111` to `5555`. To pair the cashier iPad, sign in as the manager, tap **Pair a cashier iPad** and enter the 6-digit code on the iPad's sign-in page. Demo passwords come from `MANAGER_PASSWORD` and `CASHIER_PASSWORD` (see [`.env.example`](.env.example)); set your own before sharing the app. The app starts with sample data. Without `ANTHROPIC_API_KEY` the agents run in rules mode; set the key (see [`.env.example`](.env.example)) to switch them to Claude.
 
-Run the tests with `python -m pytest` inside `backend/`.
 
 ## Stack
 

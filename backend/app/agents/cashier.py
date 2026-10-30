@@ -56,7 +56,10 @@ def pair_counts(db: Session) -> tuple[dict[int, Counter], Counter]:
     return pairs, singles
 
 
-def candidates(db: Session, cart: list[tuple[MenuItem, int]], limit: int = 6) -> list[dict]:
+def candidates(db: Session, cart: list[tuple[MenuItem, int]], limit: int = 6,
+               use_history: bool = True, use_pairing_rules: bool = True) -> list[dict]:
+    """Available items ranked by how well they complete the cart. The two switches turn off one signal each,
+    so the evaluation can measure what each one adds (an ablation); the app always uses both."""
     items = db.scalars(select(MenuItem).options(selectinload(MenuItem.recipe).selectinload(RecipeLine.ingredient))).all()
     in_cart = {i.id for i, _ in cart}
     cats = {i.category for i, _ in cart}
@@ -71,7 +74,10 @@ def candidates(db: Session, cart: list[tuple[MenuItem, int]], limit: int = 6) ->
             continue
         # how often this item is bought with what is already in the cart, as a share of those orders
         rate = max((pairs[c][item.id] / singles[c] for c in in_cart if singles[c]), default=0.0)
-        score = rate
+        score = rate if use_history else 0.0
+        if not use_pairing_rules:
+            scored.append({"item": item, "score": score, "bought_together_rate": round(rate, 2)})
+            continue
         if cats & MAINS and "Drinks" not in cats and item.category == "Drinks":
             score += 0.3
         if cats & MAINS and item.is_addon:

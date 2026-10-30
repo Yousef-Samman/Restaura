@@ -8,6 +8,7 @@ class Settings:
     database_url: str = field(default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///./restaura.db"))
     anthropic_api_key: str | None = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY") or os.getenv("RESTAURA_ANTHROPIC_API_KEY") or None)
     model: str = field(default_factory=lambda: os.getenv("RESTAURA_MODEL", "claude-opus-5-5"))
+    llm_timeout: float = field(default_factory=lambda: float(os.getenv("RESTAURA_LLM_TIMEOUT", "30")))
     store_name: str = field(default_factory=lambda: os.getenv("STORE_NAME", "Demo Store"))
     smtp_host: str | None = field(default_factory=lambda: os.getenv("SMTP_HOST") or None)
     smtp_port: int = field(default_factory=lambda: int(os.getenv("SMTP_PORT", "587")))
