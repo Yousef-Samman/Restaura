@@ -60,3 +60,26 @@ def test_learning_beats_no_learning_in_simulation():
     assert r["edits_learning_on"] < 0.6 * r["edits_learning_off"]
     assert r["wrong_lead_weeks_on"] < r["wrong_lead_weeks_off"]
     assert r["wrong_suggestions"] == 0
+
+
+def test_forecast_learns_special_days(client):
+    f = client.get("/api/forecast").json()
+    learned = {l["label"]: l for l in f["special_days"]["learned"]}
+    assert learned["Promotion"]["days"] == 2 and 1.3 < learned["Promotion"]["lift"] < 1.55
+    promo = next(d for d in f["days"] if d["special"])
+    normal_same_weekday = [d for d in f["days"] if not d["special"]]
+    assert promo["special"]["lift"] == learned["Promotion"]["lift"]
+    assert promo["sales"] > max(d["sales"] for d in normal_same_weekday)
+    # a new kind of day: tagged, but nothing to learn from yet, so it is forecast as normal
+    day = next(d for d in f["days"] if not d["special"] and d["date"] != f["days"][0]["date"])
+    r = client.post("/api/special-days", json={"date": day["date"], "label": "Eid"})
+    assert r.status_code == 200
+    again = next(d for d in client.get("/api/forecast").json()["days"] if d["date"] == day["date"])
+    assert again["special"] == {"label": "Eid", "lift": None, "days": 0} and abs(again["sales"] - day["sales"]) < 1
+    assert client.delete(f"/api/special-days/{r.json()['id']}").status_code == 200
+
+
+def test_special_days_beat_no_special_days():
+    from evals.forecast_eval import special_days
+    r = special_days()
+    assert r["error_tagged_on"] < r["error_tagged_off"] and r["error_all_on"] < r["error_all_off"]

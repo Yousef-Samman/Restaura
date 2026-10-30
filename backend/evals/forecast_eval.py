@@ -6,6 +6,8 @@ It replaced the earlier method, a plain average of the same weekday over 4 weeks
 validation window, confirmed on the test window (both are reported).
 Baselines: yesterday's sales, the last 7-day average, and the same weekday last week.
 Ablations: the weekday pattern from 4 weeks instead of 8, and the method without the recent level.
+Special days on vs off: a synthetic store with paydays and promotions the manager tags. With special days on,
+tagged days are kept out of the normal pattern and each label's lift is learned from its past days.
 Learning rules tried and rejected (both made the error worse on both data sets, so the app does not use them):
 switching each day to the method that was closest over the last 4 weeks, and correcting a steady lean.
 
@@ -182,6 +184,58 @@ def run(log=print) -> dict:
         t = r["test"]["methods"]
         log(f"  forecast / {name} (test window): app error {t[APP]['mape']:.1%}, switching {t[SWITCHING]['mape']:.1%}, lean {t[LEAN]['mape']:.1%}, previous method {t[PREVIOUS]['mape']:.1%}, "
             f"best baseline {min(v['mape'] for k, v in t.items() if 'baseline' in k):.1%}")
+    sd = special_days()
+    log(f"  forecast / special days on vs off ({sd['tagged_days']} tagged days in the test window): error on tagged days "
+        f"{sd['error_tagged_off']:.1%} -> {sd['error_tagged_on']:.1%}, on normal days {sd['error_normal_off']:.1%} -> "
+        f"{sd['error_normal_on']:.1%}, all days {sd['error_all_off']:.1%} -> {sd['error_all_on']:.1%}")
     if not real:
         log("  forecast / U Walk (real): skipped, the DSR workbooks are not on this machine")
     return out
+
+
+# ---- special days: learning on vs off ---------------------------------------------------------------------------
+def special_days_history(seed: int = 4, weeks: int = 26) -> tuple[dict[dt.date, float], dict[dt.date, str]]:
+    """The synthetic store with days that are not normal, tagged as a manager would: payday (the 27th, about 25%
+    busier) and a promotion every 3 weeks (about 50% busier, varying)."""
+    rng = random.Random(seed)
+    h = synthetic_history(seed)
+    tags = {}
+    for d in sorted(h):
+        if d.day == 27:
+            h[d] = round(h[d] * rng.gauss(1.25, 0.05), 2)
+            tags[d] = "Payday"
+    start = min(h)
+    for k in range(5, weeks * 7, 21):
+        d = start + dt.timedelta(days=k)
+        if d in h and d not in tags:
+            h[d] = round(h[d] * rng.gauss(1.5, 0.08), 2)
+            tags[d] = "Promotion"
+    return h, tags
+
+
+def special_days(test_days: int = TEST_DAYS) -> dict:
+    """The app's forecast with special days off (tags ignored) and on (tagged days kept out of the normal pattern,
+    each label's lift learned from its past days), on the last `test_days` days. Error on all days and on the
+    tagged days alone."""
+    from app.forecast import learn_lifts, special_forecast
+    h, tags = special_days_history()
+    days = sorted(h)
+    origins = days[-test_days - HORIZON + 1:-HORIZON + 1]
+    res = {"off": [], "on": []}
+    for o in origins:
+        past = _before(h, o)
+        lifts = learn_lifts(past, tags, o)
+        for k in range(HORIZON):
+            t = o + dt.timedelta(days=k)
+            if t not in h:
+                continue
+            off = level_weekday_forecast(past, o, t)
+            on, _ = special_forecast(past, tags, o, t, lifts)
+            if off and on:
+                res["off"].append((t in tags, abs(off - h[t]) / h[t]))
+                res["on"].append((t in tags, abs(on - h[t]) / h[t]))
+    err = lambda rows, only=None: sum(e for s, e in rows if only is None or s == only) / max(1, sum(only is None or s == only for s, _ in rows))
+    return {"tagged_days": sum(1 for d in days[-test_days:] if d in tags),
+            "error_all_off": err(res["off"]), "error_all_on": err(res["on"]),
+            "error_tagged_off": err(res["off"], True), "error_tagged_on": err(res["on"], True),
+            "error_normal_off": err(res["off"], False), "error_normal_on": err(res["on"], False)}

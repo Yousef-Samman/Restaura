@@ -1,40 +1,40 @@
 {
  "run": {
-  "at": "2026-10-30T16:00:13+00:00",
+  "at": "2026-10-30T23:45:02+00:00",
   "ai_model": "claude-haiku-5-5",
-  "ai_at": "2026-10-30T16:00:13+00:00",
-  "seconds": 344
+  "ai_at": "2026-10-30T23:26:55+00:00",
+  "seconds": 408
  },
  "cashier": {
   "app sample data": {
    "held_out_orders_days": 7,
-   "distinct_carts": 31,
+   "distinct_carts": 29,
    "methods": {
     "Best sellers (baseline)": {
-     "cases": 272,
-     "hit_at_2": 0.6948529411764706,
-     "precision": 0.3805147058823529
+     "cases": 251,
+     "hit_at_2": 0.32270916334661354,
+     "precision": 0.16533864541832669
     },
     "Restaura rules (app)": {
-     "cases": 272,
-     "hit_at_2": 0.6911764705882353,
-     "precision": 0.3694852941176471
+     "cases": 251,
+     "hit_at_2": 0.6613545816733067,
+     "precision": 0.3645418326693227
     },
     "Ablation: order history only": {
-     "cases": 272,
-     "hit_at_2": 0.6838235294117647,
-     "precision": 0.36580882352941174
+     "cases": 251,
+     "hit_at_2": 0.5657370517928287,
+     "precision": 0.31673306772908366
     },
     "Ablation: pairing rules only": {
-     "cases": 272,
-     "hit_at_2": 0.6102941176470589,
-     "precision": 0.3088235294117647
+     "cases": 251,
+     "hit_at_2": 0.2868525896414343,
+     "precision": 0.14940239043824702
     },
     "Restaura with Claude": {
-     "cases": 272,
-     "hit_at_2": 0.6911764705882353,
-     "precision": 0.37222222222222223,
-     "carts": 31,
+     "cases": 251,
+     "hit_at_2": 0.7051792828685259,
+     "precision": 0.38645418326693226,
+     "carts": 29,
      "fell_back_to_rules": 0
     }
    }
@@ -65,8 +65,8 @@
     },
     "Restaura with Claude": {
      "cases": 306,
-     "hit_at_2": 0.8856209150326797,
-     "precision": 0.5277777777777778,
+     "hit_at_2": 0.8758169934640523,
+     "precision": 0.5228758169934641,
      "carts": 26,
      "fell_back_to_rules": 0
     }
@@ -109,6 +109,18 @@
       "no_forecast": 0,
       "mae_sar": 327.9,
       "mape": 0.0801311272663024
+     },
+     "Rejected learning: switch to the method closest lately": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 336.7,
+      "mape": 0.08244441251710435
+     },
+     "Rejected learning: correct a steady lean": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 379.3,
+      "mape": 0.09546538990842793
      },
      "Ablation: weekday pattern from 4 weeks": {
       "forecasts": 294,
@@ -159,6 +171,18 @@
       "mae_sar": 279.4,
       "mape": 0.06732162583953394
      },
+     "Rejected learning: switch to the method closest lately": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 279.4,
+      "mape": 0.06732162583953394
+     },
+     "Rejected learning: correct a steady lean": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mae_sar": 291.6,
+      "mape": 0.07116563439322443
+     },
      "Ablation: weekday pattern from 4 weeks": {
       "forecasts": 294,
       "no_forecast": 0,
@@ -205,6 +229,16 @@
       "no_forecast": 0,
       "mape": 0.3380259381294739
      },
+     "Rejected learning: switch to the method closest lately": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.349837879118401
+     },
+     "Rejected learning: correct a steady lean": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.37679147007902336
+     },
      "Ablation: weekday pattern from 4 weeks": {
       "forecasts": 294,
       "no_forecast": 0,
@@ -247,6 +281,16 @@
       "no_forecast": 0,
       "mape": 0.20783944162045945
      },
+     "Rejected learning: switch to the method closest lately": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.2125609393020538
+     },
+     "Rejected learning: correct a steady lean": {
+      "forecasts": 294,
+      "no_forecast": 0,
+      "mape": 0.2173188324922619
+     },
      "Ablation: weekday pattern from 4 weeks": {
       "forecasts": 294,
       "no_forecast": 0,
@@ -277,6 +321,7 @@
    "steps": [
     "Checked stock levels",
     "Checked open orders",
+    "Checked what it has learned",
     "Checked recipes",
     "Worked out what to order",
     "Drafted the order for Supplier A",
@@ -294,6 +339,17 @@
    "orders_too_small": 0,
    "orders_too_large": 0
   },
+  "learning": {
+   "stores": 30,
+   "weeks": 10,
+   "order_lines": 1800,
+   "edits_learning_off": 1146,
+   "edits_learning_on": 388,
+   "wrong_lead_weeks_off": 440,
+   "wrong_lead_weeks_on": 88,
+   "suggestions": 158,
+   "wrong_suggestions": 0
+  },
   "with Claude": {
    "source": "ai",
    "expected_lines": 6,
@@ -310,6 +366,7 @@
     "Checked stock levels",
     "Read the 7-day sales forecast",
     "Checked open orders",
+    "Checked what it has learned",
     "Checked recipes",
     "Worked out what to order",
     "Drafted the order for Supplier A",
@@ -405,6 +462,28 @@
    ]
   }
  },
+ "learning": {
+  "forecast_special_days": {
+   "tagged_days": 4,
+   "error_all_off": 0.11055514193584232,
+   "error_all_on": 0.08568498468061855,
+   "error_tagged_off": 0.22306595171709542,
+   "error_tagged_on": 0.11833938228764564,
+   "error_normal_off": 0.09871189880097356,
+   "error_normal_on": 0.08224767966935255
+  },
+  "stock": {
+   "stores": 30,
+   "weeks": 10,
+   "order_lines": 1800,
+   "edits_learning_off": 1146,
+   "edits_learning_on": 388,
+   "wrong_lead_weeks_off": 440,
+   "wrong_lead_weeks_on": 88,
+   "suggestions": 158,
+   "wrong_suggestions": 0
+  }
+ },
  "fixes": [
   {
    "what": "Forecast follows a change in sales within a week",
@@ -450,9 +529,9 @@
   }
  ],
  "tests": {
-  "at": "2026-10-30T16:05:57+00:00",
-  "passed": 70,
-  "total": 70,
+  "at": "2026-10-30T23:51:51+00:00",
+  "passed": 88,
+  "total": 88,
   "cases": [
    {
     "file": "test_auth",
@@ -487,6 +566,11 @@
    {
     "file": "test_auth",
     "name": "test_revoking_device_signs_cashier_out",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_auth",
+    "name": "test_staff_pin_sign_in_only_on_paired_ipad",
     "outcome": "passed"
    },
    {
@@ -640,6 +724,16 @@
     "outcome": "passed"
    },
    {
+    "file": "test_nightly",
+    "name": "test_is_due_from_the_set_time_until_a_check_has_run",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_nightly",
+    "name": "test_check_runs_once_and_leaves_drafts_for_the_manager",
+    "outcome": "passed"
+   },
+   {
     "file": "test_overview",
     "name": "test_overview_priorities_link_to_sections",
     "outcome": "passed"
@@ -790,6 +884,31 @@
     "outcome": "passed"
    },
    {
+    "file": "test_staff_coach",
+    "name": "test_only_order_takers_are_measured_on_selling",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_staff_coach",
+    "name": "test_run_gives_every_person_a_tip_fitting_their_job",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_staff_coach",
+    "name": "test_weekly_review_saves_once_per_week",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_staff_coach",
+    "name": "test_tip_shows_once_on_the_ipad_and_orders_record_who_served",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_staff_coach",
+    "name": "test_staff_coach_is_manager_only",
+    "outcome": "passed"
+   },
+   {
     "file": "test_stock_agent_tools",
     "name": "test_agent_adjusts_within_limits_and_explains",
     "outcome": "passed"
@@ -802,6 +921,56 @@
    {
     "file": "test_stock_agent_tools",
     "name": "test_wrong_tool_input_is_refused_not_crashed",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_stock_learning",
+    "name": "test_sample_history_gives_three_suggestions_and_changes_nothing",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_stock_learning",
+    "name": "test_draft_lines_show_the_suggestion_without_changing_the_draft",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_stock_learning",
+    "name": "test_applying_changes_future_orders_and_the_suggestion_goes",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_stock_learning",
+    "name": "test_dismissed_suggestion_stays_away",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_stock_learning",
+    "name": "test_forecast_checks_itself",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_stock_learning",
+    "name": "test_learning_beats_no_learning_in_simulation",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_stock_learning",
+    "name": "test_forecast_learns_special_days",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_stock_learning",
+    "name": "test_special_days_beat_no_special_days",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_suppliers",
+    "name": "test_add_edit_and_remove_a_supplier",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_suppliers",
+    "name": "test_ticking_an_ingredient_moves_it_and_a_supplier_with_ingredients_cannot_go",
     "outcome": "passed"
    }
   ]

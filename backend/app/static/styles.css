@@ -968,3 +968,6 @@ body.has-hero .mgr-top { padding-bottom: 10px; }
 .learned-hint .link { font-weight: 800; }
 .po .ln .learned-hint { grid-column: 1 / -1; }
 .panel > .warn { background: var(--warn-bg); color: var(--warn); border-radius: 12px; padding: 10px 12px; font-size: 14px; font-weight: 600; }
+.sd-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sd-row .field input { min-width: 0; width: 100%; box-sizing: border-box; }
+.list-item .x { width: 32px; height: 32px; border-radius: 10px; color: var(--muted); font-size: 18px; flex: none; }

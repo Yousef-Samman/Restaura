@@ -289,3 +289,13 @@ class Lesson(Base):
     status: Mapped[str] = mapped_column(String(12), default="suggested")  # suggested | applied | dismissed
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
     decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
+
+
+class SpecialDay(Base):
+    """A day the manager tags as not normal (Eid, payday, a promotion, a closed day). The forecast keeps tagged days
+    out of the normal pattern and learns each label's lift from the past tagged days."""
+    __tablename__ = "special_day"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    date: Mapped[dt.date] = mapped_column(Date, unique=True)
+    label: Mapped[str] = mapped_column(String(60))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)

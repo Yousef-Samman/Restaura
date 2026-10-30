@@ -74,6 +74,22 @@ def markdown(r: dict) -> str:
         lines += [f"**Busy days after the delivery** (Claude, {b['runs']} runs): the 7-day average gives {b['code_qty']:g} g, "
                   f"which runs out in the busy days. Claude raised it in {b['raised']} of {b['runs']} runs, lowered it in "
                   f"{b['lowered']}, went outside the allowed range or skipped the order in {b['out_of_range_or_missing']}.", ""]
+    if "learning" in r:
+        sd, sl = r["learning"]["forecast_special_days"], r["learning"]["stock"]
+        lines += ["## 3b. Learning on vs off", "",
+                  "Both agents learn from what happened after they acted. Each is run twice on the same data, learning on and off.", "",
+                  _table(["Agent", "Test", "Learning off", "Learning on"], [
+                      ["Forecast", f"Error on tagged special days ({sd['tagged_days']} in the test window)", _pct(sd["error_tagged_off"]), _pct(sd["error_tagged_on"])],
+                      ["Forecast", "Error on normal days (special days no longer skew them)", _pct(sd["error_normal_off"]), _pct(sd["error_normal_on"])],
+                      ["Forecast", "Error on all days", _pct(sd["error_all_off"]), _pct(sd["error_all_on"])],
+                      ["Stock", f"Order lines the manager had to edit ({sl['stores']} stores x {sl['weeks']} weeks, {sl['order_lines']} lines)", sl["edits_learning_off"], sl["edits_learning_on"]],
+                      ["Stock", "Supplier-weeks with the wrong delivery days", sl["wrong_lead_weeks_off"], sl["wrong_lead_weeks_on"]],
+                      ["Stock", "Suggestions the manager had to turn down", "n/a", f"{sl['wrong_suggestions']}/{sl['suggestions']}"]]),
+                  "",
+                  "Forecast data: the synthetic store with paydays and promotions the manager tags. Stock data: simulated managers with "
+                  "editing habits and suppliers slower than their setting; a manager applies a suggestion within 10% of their habit.",
+                  "Tried and rejected for the forecast (worse on both the synthetic and the real U Walk sales, see section 2): switching "
+                  "each day to the method closest lately, and correcting a steady lean.", ""]
     lines += ["## 4. Invoice reader", ""]
     inv = r["invoice"]
     if "skipped" in inv:

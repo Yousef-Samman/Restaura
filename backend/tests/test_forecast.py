@@ -9,8 +9,10 @@ def test_forecast_shape_and_method(client):
     today = dt.date.today()
     assert f["days"][0]["date"] == today.isoformat()
     for d in f["days"]:
-        assert 4 <= d["based_on"] <= 5  # 30 days of sample history covers four or five of each weekday
-        assert d["low"] <= d["sales"] <= d["high"]
+        # 30 days of sample history: four or five of each weekday, less a tagged special day
+        assert 3 <= d["based_on"] <= 5
+        if not d["special"]:  # a tagged promotion is forecast above the normal range on purpose
+            assert d["low"] <= d["sales"] <= d["high"]
     assert f["tomorrow_items"] and all(i["qty"] >= 0 for i in f["tomorrow_items"])
     flour = next(i for i in f["ingredients"] if i["name"] == "Flour")
     assert flour["need"] > 0

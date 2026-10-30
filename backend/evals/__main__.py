@@ -49,7 +49,10 @@ def main() -> None:
         "forecast": forecast_eval.run(),
         "stock": stock_eval.run(llm),
         "invoice": invoice_eval.run(llm),
+        # learning on vs off: special days for the forecast, the stock agent's learning loop
+        "learning": {"forecast_special_days": forecast_eval.special_days()},
     }
+    results["learning"]["stock"] = results["stock"]["learning"]
     if llm:
         results["run"]["ai_at"] = results["run"]["at"]
     results["fixes"] = FIXES

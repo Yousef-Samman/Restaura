@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import (Attendance, Expense, Ingredient, RoutineCheck, RoutineTask, Shift, StaffMember, StaffReview, StaffTip, MenuItem,
-                     Order, OrderLine, PurchaseOrder, PurchaseOrderLine, RecipeLine, StockMove, SuggestionEvent, Supplier)
+                     Order, OrderLine, PurchaseOrder, PurchaseOrderLine, RecipeLine, SpecialDay, StockMove, SuggestionEvent, Supplier)
 
 SUPPLIERS = [
     ("Fresh Produce Co.", "orders@fresh-produce.example", 1),  # orders go by WhatsApp, see WHATSAPP below
@@ -85,12 +85,33 @@ def seed(db: Session, history_days: int = 30) -> None:
     db.add_all(items)
     db.flush()
     _seed_history(db, items, history_days)
+    _seed_special_days(db)
     _seed_expenses(db)
     _seed_routines(db)
     _seed_staff(db)
     _seed_service(db)
     _seed_learning(db, ingredients, suppliers)
     db.commit()
+
+
+PROMO_DAYS_AGO, PROMO_LIFT, NEXT_PROMO_IN = (23, 9), 1.4, 3
+
+
+def _seed_special_days(db: Session) -> None:
+    """Two sample promotion days, 40% busier than normal, tagged by the manager, and the next promotion tagged
+    ahead, so the forecast can learn the lift (illustrative)."""
+    rng = random.Random(5)
+    today = dt.date.today()
+    for ago in PROMO_DAYS_AGO:
+        day = today - dt.timedelta(days=ago)
+        orders = db.scalars(select(Order).where(Order.business_date == day)).all()
+        for o in rng.sample(orders, round(len(orders) * (PROMO_LIFT - 1))):
+            extra = Order(business_date=day, source="history", total=o.total, created_at=o.created_at)
+            extra.lines = [OrderLine(menu_item_id=l.menu_item_id, qty=l.qty, price=l.price) for l in o.lines]
+            db.add(extra)
+        db.add(SpecialDay(date=day, label="Promotion"))
+    db.add(SpecialDay(date=today + dt.timedelta(days=NEXT_PROMO_IN), label="Promotion"))
+    db.flush()
 
 
 def _seed_learning(db: Session, ingredients: dict, suppliers: dict) -> None:

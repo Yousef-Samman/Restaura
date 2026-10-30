@@ -202,6 +202,28 @@ function coachHtml(c) {
     </div></div>`;
 }
 
+// special days the manager tags; the forecast learns each label's lift from the past ones
+function specialDaysHtml(f) {
+  const sd = f.special_days;
+  const day = (iso) => new Date(iso + "T00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const learned = Object.fromEntries(sd.learned.map((l) => [l.label.toLowerCase(), l]));
+  const lift = (x) => `${Math.abs(Math.round((x - 1) * 100))}% ${x >= 1 ? "busier" : "quieter"}`;
+  const fc = Object.fromEntries(f.days.map((d) => [d.date, d]));
+  const labels = [...new Set(["Promotion", "Payday", "Eid", "National Day", "Ramadan night", ...sd.learned.map((l) => l.label)])];
+  return `<div class="section"><h2>Special days</h2><div class="panel">
+    ${sd.learned.map((l) => `<div class="list-item"><span><b>${esc(l.label)}</b><br><span class="muted">Learned from ${l.days} past ${l.days === 1 ? "day" : "days"}</span></span><span class="chip received">${lift(l.lift)}</span></div>`).join("")}
+    ${sd.upcoming.map((u) => { const l = learned[u.label.toLowerCase()], d = fc[u.date];
+      return `<div class="list-item"><span>${day(u.date)} · ${esc(u.label)}<br><span class="muted">${l ? `Forecast ${d ? sar(d.sales) + ", " : ""}${lift(l.lift)} than a normal ${new Date(u.date + "T00:00").toLocaleDateString("en-GB", { weekday: "long" })}` : "Not learned yet: tag past ones too, and the forecast learns after the first"}</span></span><button class="x" data-rmday="${u.id}" aria-label="Remove ${esc(u.label)} on ${day(u.date)}">×</button></div>`; }).join("")}
+    ${sd.past.length ? `<details class="table"><summary>${sd.past.length} past tagged ${sd.past.length === 1 ? "day" : "days"}</summary>${sd.past.map((p) => `<div class="list-item"><span>${day(p.date)} · ${esc(p.label)}<br><span class="muted">Sold ${sar(p.sales)}</span></span><button class="x" data-rmday="${p.id}" aria-label="Remove">×</button></div>`).join("")}</details>` : ""}
+    <div class="form" style="margin-top:12px">
+      <div class="sd-row"><label class="field">Day<input id="sd-date" type="date"></label><label class="field">What is it<input id="sd-label" list="sd-labels" maxlength="60" placeholder="Promotion, Eid, Payday…"></label></div>
+      <datalist id="sd-labels">${labels.map((l) => `<option value="${esc(l)}">`).join("")}</datalist>
+      <button class="solid" id="sd-save">Tag this day</button>
+    </div>
+    <div class="muted" style="font-size:13px;margin-top:8px">Tag days that aren't normal, past or coming. Tagged days stop skewing the normal forecast, and each kind's lift is learned from its past days. The ingredients needed follow.</div>
+  </div></div>`;
+}
+
 // the forecast checks itself every day against what was really sold
 function scorecardHtml(c) {
   if (!c || !c.weeks.length) return "";
@@ -428,7 +450,8 @@ const VIEWS = {
         <div class="meta">${esc(f.method)}</div>
       </div></div>
       <div class="section panel chart-card"><h3>Sales: last 14 days and next 7</h3><div class="sub">SAR · solid line is actual, dashed line is the forecast</div><div id="c-fc"></div>
-        <details class="table"><summary>Show as table</summary><table><tr><th>Day</th><th>Forecast</th><th>Range</th></tr>${f.days.map((d) => `<tr><td>${day(d.date)}</td><td class="num">${sar(d.sales)}</td><td class="num">${sar(d.low)}–${sar(d.high)}</td></tr>`).join("")}</table></details></div>
+        <details class="table"><summary>Show as table</summary><table><tr><th>Day</th><th>Forecast</th><th>Range</th></tr>${f.days.map((d) => `<tr><td>${day(d.date)}${d.special ? ` · ${esc(d.special.label)}` : ""}</td><td class="num">${sar(d.sales)}</td><td class="num">${sar(d.low)}–${sar(d.high)}</td></tr>`).join("")}</table></details></div>
+      ${specialDaysHtml(f)}
       ${scorecardHtml(f.scorecard)}
       <div class="section panel chart-card"><h3>Tomorrow's prep</h3><div class="sub">Expected items sold, ${day(f.days[1].date, { weekday: "long" })}</div><div id="c-prep"></div></div>
       <div class="section"><h2>Ingredients for the next 7 days</h2><div class="panel">
@@ -939,6 +962,12 @@ const BIND = {
   },
   forecast() {
     const f = window._fc;
+    $("sd-save").onclick = async () => {
+      const date = $("sd-date").value, label = $("sd-label").value.trim();
+      if (!date || !label) return toast("Pick the day and say what it is", true);
+      try { await api("/api/special-days", { method: "POST", body: JSON.stringify({ date, label }) }); toast(`${label} tagged`); render(); } catch (e) { toast(e.message, true); }
+    };
+    document.querySelectorAll("[data-rmday]").forEach((b) => (b.onclick = async () => { await api(`/api/special-days/${b.dataset.rmday}`, { method: "DELETE" }); toast("Tag removed"); render(); }));
     const d = (iso) => new Date(iso + "T00:00");
     const tip = (iso, v, kind) => `${d(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}<br><b>${sar(v)}</b> ${kind}`;
     const series = [...f.actual.map((a) => ({ value: a.sales, label: d(a.date).getDate(), tip: tip(a.date, a.sales, "actual") })),

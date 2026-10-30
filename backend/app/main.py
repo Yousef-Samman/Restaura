@@ -19,7 +19,7 @@ from .agents.llm import LLM
 from .config import Settings, get_settings
 from .db import Base, make_engine, make_sessionmaker
 from .models import (AgentRun, Device, Expense, RoutineTask, Shift, StaffMember, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
-                     PurchaseOrderLine, RecipeLine, Lesson, StaffReview, StaffTip, StockMove, Supplier, SuggestionEvent)
+                     PurchaseOrderLine, RecipeLine, Lesson, SpecialDay, StaffReview, StaffTip, StockMove, Supplier, SuggestionEvent)
 from .seed import STORE_UTC_OFFSET, seed
 
 STATIC = Path(__file__).parent / "static"
@@ -46,6 +46,11 @@ class SupplierIn(BaseModel):
     phone: str | None = Field(None, max_length=20)
     lead_days: int = Field(1, ge=0, le=30)
     ingredient_ids: list[int] = []
+
+
+class SpecialDayIn(BaseModel):
+    date: dt.date
+    label: str = Field(min_length=1, max_length=60)
 
 
 class ReviewIn(BaseModel):
@@ -508,6 +513,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/forecast")
     def get_forecast(db: Session = Depends(get_db), _=Depends(manager_only)):
         return forecast.forecast(db, 7)
+
+    @app.post("/api/special-days")
+    def add_special_day(body: SpecialDayIn, db: Session = Depends(get_db), _=Depends(manager_only)):
+        """Tag a day as not normal. Tagging it again changes its label."""
+        day = db.scalar(select(SpecialDay).where(SpecialDay.date == body.date)) or SpecialDay(date=body.date)
+        day.label = " ".join(body.label.split())
+        db.add(day)
+        db.commit()
+        return {"id": day.id, "date": day.date.isoformat(), "label": day.label}
+
+    @app.delete("/api/special-days/{day_id}")
+    def remove_special_day(day_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
+        day = db.get(SpecialDay, day_id)
+        if not day:
+            raise HTTPException(404, "Special day not found")
+        db.delete(day)
+        db.commit()
+        return {"removed": day_id}
 
     # ---- expenses and profit ------------------------------------------------------
     @app.get("/api/expenses")
