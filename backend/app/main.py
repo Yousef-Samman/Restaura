@@ -86,8 +86,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def menu(db: Session = Depends(get_db)):
         items = db.scalars(select(MenuItem).options(selectinload(MenuItem.recipe).selectinload(RecipeLine.ingredient))
                            .order_by(MenuItem.id)).all()
+        since = dt.date.today() - dt.timedelta(days=14)
+        sold = dict(db.execute(select(OrderLine.menu_item_id, func.sum(OrderLine.qty)).join(Order)
+                               .where(Order.business_date >= since).group_by(OrderLine.menu_item_id)).all())
+        popular = {i for i, _ in sorted(sold.items(), key=lambda kv: kv[1], reverse=True)[:3]}
         return [{"id": i.id, "name": i.name, "category": i.category, "price": i.price, "is_addon": i.is_addon,
-                 "available": stock.item_available(i)} for i in items]
+                 "available": stock.item_available(i), "popular": i.id in popular} for i in items]
+
+    @app.get("/api/today")
+    def today(db: Session = Depends(get_db)):
+        d = dt.date.today()
+        orders, sales = db.execute(select(func.count(Order.id), func.coalesce(func.sum(Order.total), 0))
+                                   .where(Order.business_date == d, Order.source != "history")).one()
+        start = dt.datetime.combine(d, dt.time())
+        shown = db.scalar(select(func.count(SuggestionEvent.id)).where(SuggestionEvent.created_at >= start)) or 0
+        accepted = db.scalar(select(func.count(SuggestionEvent.id))
+                             .where(SuggestionEvent.created_at >= start, SuggestionEvent.accepted)) or 0
+        addon_sales = db.scalar(select(func.coalesce(func.sum(OrderLine.price * OrderLine.qty), 0)).join(Order)
+                                .where(Order.business_date == d, OrderLine.from_suggestion)) or 0
+        report = stock.stock_report(db)
+        return {"date": d.isoformat(), "orders": orders, "sales": round(sales, 2),
+                "avg_ticket": round(sales / orders, 2) if orders else 0,
+                "suggestions_shown": shown, "suggestions_accepted": accepted, "suggested_sales": round(addon_sales, 2),
+                "low_stock": sum(r["status"] != "ok" for r in report),
+                "drafts": db.scalar(select(func.count(PurchaseOrder.id)).where(PurchaseOrder.status == "draft")) or 0}
 
     @app.post("/api/cashier/suggest")
     def suggest(cart: Cart, db: Session = Depends(get_db)):
@@ -263,6 +285,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/")
     def index():
         return FileResponse(STATIC / "cashier.html")
+
+    @app.get("/manager")
+    def manager():
+        return FileResponse(STATIC / "manager.html")
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

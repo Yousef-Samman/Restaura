@@ -102,7 +102,7 @@ pip install -e ".[dev]"
 python -m uvicorn app.main:create_app --factory --port 8000
 ```
 
-Open http://localhost:8000 for the cashier screen. The app starts with sample data. Without `ANTHROPIC_API_KEY` the agents run in rules mode; set the key (see [`.env.example`](.env.example)) to switch them to Claude.
+Open http://localhost:8000 for the cashier screen (tablet or laptop) and http://localhost:8000/manager for the manager app (phone first). The app starts with sample data. Without `ANTHROPIC_API_KEY` the agents run in rules mode; set the key (see [`.env.example`](.env.example)) to switch them to Claude.
 
 Run the tests with `python -m pytest` inside `backend/`.
 

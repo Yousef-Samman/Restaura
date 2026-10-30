@@ -10,34 +10,53 @@
 <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-<header class="topbar">
-  <img src="/static/logo.svg" alt="">
-  <span class="brand">Restaura</span>
-  <span id="store" class="badge"></span>
-  <nav>
-    <a href="/" aria-current="page">Cashier</a>
-    <a href="/manager">Manager</a>
+<div class="phone-block">
+  <img src="/static/logo.svg" alt="Restaura">
+  <h1>The cashier runs on a tablet or laptop</h1>
+  <p>On a phone, use the manager app to see sales, approve supplier orders and check stock.</p>
+  <a href="/manager">Open the manager app</a>
+</div>
+<div class="pos">
+  <nav class="rail" aria-label="Menu categories">
+    <div class="logo"><img src="/static/logo.svg" alt="Restaura"></div>
+    <div id="cats" style="display:contents"></div>
+    <div class="spacer"></div>
+    <a class="cat" href="/manager" id="mgr-link"></a>
   </nav>
-</header>
-<main class="pos">
-  <section>
-    <div class="tabs" id="tabs" role="toolbar" aria-label="Menu categories"></div>
-    <div class="grid" id="grid"></div>
-  </section>
-  <aside class="panel" aria-label="Current order">
-    <h2>Current order</h2>
-    <ul class="lines" id="lines"></ul>
-    <div class="helper" id="helper" aria-live="polite">
-      <header>✦ Cashier helper <span class="badge" id="ai-badge"></span></header>
-      <div id="suggestions"><p class="hint">Add an item and I'll suggest what fits.</p></div>
+  <section class="main">
+    <div class="bar">
+      <div>
+        <h1 id="cat-title">Menu</h1>
+        <div class="sub" id="store"></div>
+      </div>
+      <label class="search"><span id="search-icon"></span><input id="search" type="search" placeholder="Search the menu" aria-label="Search the menu"></label>
     </div>
-    <div class="total"><span>Total</span><span id="total">0 SAR</span></div>
-    <div style="display:flex;gap:8px">
-      <button class="secondary" id="clear">Clear</button>
-      <button class="primary" id="charge" style="flex:1" disabled>Charge</button>
+    <div class="kpis">
+      <div class="kpi"><div class="label">Orders today</div><div class="value num" id="k-orders">0</div></div>
+      <div class="kpi"><div class="label">Sales today</div><div class="value num" id="k-sales">0 SAR</div></div>
+      <div class="kpi"><div class="label">Helper add-ons today</div><div class="value num" id="k-addons">0</div></div>
+    </div>
+    <div class="items" id="grid"></div>
+  </section>
+  <aside class="order" aria-label="Current order">
+    <header><h2>Current order</h2><span class="muted num" id="count"></span></header>
+    <ul class="lines" id="lines"></ul>
+    <div class="helper" aria-live="polite">
+      <div class="head"><span id="spark"></span>Cashier helper <span class="ai-pill" id="ai-badge"></span></div>
+      <div id="suggestions"></div>
+    </div>
+    <div class="totals">
+      <div class="r"><span>Subtotal (excl. VAT)</span><span class="num" id="subtotal">0.00 SAR</span></div>
+      <div class="r"><span>VAT 15%</span><span class="num" id="vat">0.00 SAR</span></div>
+      <div class="r grand"><span>Total</span><span class="num" id="total">0 SAR</span></div>
+      <div class="actions">
+        <button class="btn ghost" id="clear">Clear</button>
+        <button class="btn solid" id="charge" disabled>Charge</button>
+      </div>
     </div>
   </aside>
-</main>
+</div>
+<script src="/static/icons.js"></script>
 <script src="/static/cashier.js"></script>
 </body>
 </html>

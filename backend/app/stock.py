@@ -92,6 +92,7 @@ def plan_reorders(db: Session) -> list[dict]:
         plan.append({
             "ingredient": ing, "qty": qty, "daily": daily, "lead": lead,
             "reason": f"On hand {ing.on_hand:.0f} {ing.unit}, minimum {ing.min_level:.0f}. "
-                      f"Order brings it to par {ing.par_level:.0f} plus {lead} day(s) of use at {daily:.0f} {ing.unit}/day.",
+                      f"Ordering enough to refill to {ing.par_level:.0f} {ing.unit}, plus {lead} {'day' if lead == 1 else 'days'} of use "
+                      f"({daily:.0f} {ing.unit}/day) until the delivery arrives.",
         })
     return plan

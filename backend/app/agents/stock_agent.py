@@ -55,9 +55,10 @@ def run(db: Session, llm: LLM) -> dict:
     warnings = [f"{r['name']} is below zero ({r['on_hand']} {r['unit']}). A delivery was probably not recorded."
                 for r in report if r["status"] == "negative"]
     urgent = [f"{p['ingredient'].name} may run out before {p['ingredient'].supplier.name} can deliver "
-              f"({p['lead']} day lead time)." for p in plan
+              f"({p['lead']}-day lead time)." for p in plan
               if p["daily"] and p["ingredient"].on_hand / p["daily"] < p["lead"]]
-    headline = (f"{len(orders)} supplier order(s) drafted for {len(plan)} ingredient(s)."
+    plural = lambda n, w: f"{n} {w}" + ("" if n == 1 else "s")
+    headline = (f"{plural(len(orders), 'supplier order')} drafted for {plural(len(plan), 'ingredient')}. Waiting for your approval."
                 if orders else "Stock is above minimum. No orders needed today.")
     notes = {po.supplier.name: "; ".join(f"{l.ingredient.name}: {l.reason}" for l in po.lines) for po in orders}
     source = "rules"

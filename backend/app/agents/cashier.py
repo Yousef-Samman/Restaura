@@ -85,12 +85,28 @@ def candidates(db: Session, cart: list[tuple[MenuItem, int]], limit: int = 6) ->
     return scored[:limit]
 
 
+def _a(name: str) -> str:
+    return ("an " if name[0].lower() in "aeiou" else "a ") + name.lower()
+
+
 def _rule_pitch(item: MenuItem) -> str:
     if item.is_addon:
-        return f"Would you like to add a {item.name.lower()} on top?"
+        return f"Would you like to add {_a(item.name)} on top?"
     if item.category == "Drinks":
-        return f"Would you like a {item.name.lower()} with that?"
-    return f"Our {item.name.lower()} goes great with your drink. Would you like one?"
+        return f"Would you like {_a(item.name)} with that?"
+    return f"Would you like {_a(item.name)} to go with your drink?"
+
+
+def _distinct(cands: list[dict], n: int = 2) -> list[dict]:
+    """Best candidates, at most one per category, so the two suggestions are different kinds of add-on."""
+    out, seen = [], set()
+    for c in cands:
+        if c["item"].category not in seen:
+            out.append(c)
+            seen.add(c["item"].category)
+        if len(out) == n:
+            break
+    return out
 
 
 def suggest(db: Session, llm: LLM, cart: list[tuple[MenuItem, int]]) -> dict:
@@ -118,7 +134,7 @@ def suggest(db: Session, llm: LLM, cart: list[tuple[MenuItem, int]]) -> dict:
     if not picks:
         picks = [{"item_id": c["item"].id, "pitch": _rule_pitch(c["item"]),
                   "reason": f"Bought together in {c['bought_together_rate']:.0%} of past orders."
-                  if c["bought_together_rate"] else "Completes the order."} for c in cands[:2]]
+                  if c["bought_together_rate"] else "Completes the order."} for c in _distinct(cands)]
     result = []
     for p in picks:
         item = by_id[p["item_id"]]["item"]
