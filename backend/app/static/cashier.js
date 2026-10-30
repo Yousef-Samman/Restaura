@@ -37,7 +37,7 @@ function renderMenu() {
   for (const item of items) {
     const b = document.createElement("button");
     b.className = "card";
-    if (["Waffles", "Drinks"].includes(item.category)) b.dataset.tone = "coral";
+    if (["Waffles", "Drinks"].includes(item.category)) b.dataset.tone = "accent";
     b.disabled = !item.available;
     const flag = !item.available ? "Out of stock" : item.popular ? "Popular" : "";
     b.innerHTML = `${flag ? `<span class="flag">${flag}</span>` : ""}<div class="tile">${icon(item.category)}</div>

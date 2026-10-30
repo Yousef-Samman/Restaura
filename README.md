@@ -7,9 +7,9 @@
 **AI agents that run the two jobs every restaurant forgets to do on a busy day:**<br>
 **sell a little more at the cashier, and never run out of what you sell.**
 
-![Status](https://img.shields.io/badge/status-in%20development-5B4CFF?style=for-the-badge&labelColor=FF6B4A)
-![Agents](https://img.shields.io/badge/agents-2%20built%20%C2%B7%206%20planned-5B4CFF?style=for-the-badge&labelColor=FF6B4A)
-![Human approval](https://img.shields.io/badge/manager%20approves-spend%20%26%20changes-5B4CFF?style=for-the-badge&labelColor=FF6B4A)
+![Status](https://img.shields.io/badge/status-in%20development-C8A04A?style=for-the-badge&labelColor=0F2E26)
+![Agents](https://img.shields.io/badge/agents-2%20built%20%C2%B7%206%20planned-C8A04A?style=for-the-badge&labelColor=0F2E26)
+![Human approval](https://img.shields.io/badge/manager%20approves-spend%20%26%20changes-C8A04A?style=for-the-badge&labelColor=0F2E26)
 
 <img src="assets/restaura-banner.png" alt="Restaura: AI agents for your restaurant" width="100%">
 
@@ -128,7 +128,7 @@ No keys or `.env` files are committed to this repository. The API key is supplie
 
 ## Brand
 
-Electric indigo `#5B4CFF` · Coral `#FF6B4A` · a silver cloche. Logo files and usage rules are in [docs/BRAND.md](docs/BRAND.md).
+Emerald `#0F2E26` · Brass `#C8A04A` · Cream `#F5EFE3` · a flat brass cloche. Logo files and usage rules are in [docs/BRAND.md](docs/BRAND.md).
 
 ---
 
