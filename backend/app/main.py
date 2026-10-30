@@ -2,19 +2,19 @@ import datetime as dt
 import json
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import mailer, stock
+from . import auth, mailer, stock
 from .agents import cashier, invoice, stock_agent
 from .agents.llm import LLM
 from .config import Settings, get_settings
 from .db import Base, make_engine, make_sessionmaker
-from .models import (AgentRun, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
+from .models import (AgentRun, Device, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
                      PurchaseOrderLine, RecipeLine, SuggestionEvent)
 from .seed import seed
 
@@ -46,6 +46,19 @@ class CountLine(BaseModel):
     counted: float = Field(ge=0)
 
 
+class Login(BaseModel):
+    username: str
+    password: str
+
+
+class PairStart(BaseModel):
+    name: str = Field("Cashier iPad", min_length=1, max_length=120)
+
+
+class PairCode(BaseModel):
+    code: str
+
+
 class EditLine(BaseModel):
     line_id: int
     qty: float = Field(ge=0)
@@ -56,8 +69,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     engine = make_engine(settings.database_url)
     Session_ = make_sessionmaker(engine)
     Base.metadata.create_all(engine)
-    if settings.seed_demo_data:
-        with Session_() as db:
+    with Session_() as db:
+        auth.seed_users(db, settings.manager_password, settings.cashier_password)
+        if settings.seed_demo_data:
             seed(db)
     llm = LLM(settings)
     app = FastAPI(title="Restaura", version="0.1.0")
@@ -65,6 +79,67 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_db():
         with Session_() as db:
             yield db
+
+    def require(*roles: str):
+        def dep(request: Request, db: Session = Depends(get_db)):
+            user = auth.current_user(db, request)
+            if not user:
+                raise HTTPException(401, "Please sign in")
+            if user.role not in roles:
+                raise HTTPException(403, "Your account can't open this")
+            return user
+        return dep
+
+    staff = require("cashier", "manager")
+    manager_only = require("manager")
+    cookie = dict(httponly=True, samesite="lax", secure=settings.secure_cookies)
+
+    # ---- accounts and devices --------------------------------------------------
+    @app.post("/api/auth/login")
+    def do_login(body: Login, request: Request, response: Response, db: Session = Depends(get_db)):
+        token, user = auth.login(db, body.username, body.password, request.cookies.get(auth.DEVICE_COOKIE))
+        response.set_cookie(auth.SESSION_COOKIE, token, max_age=auth.SESSION_HOURS * 3600, **cookie)
+        return {"name": user.name, "role": user.role, "home": "/cashier" if user.role == "cashier" else "/manager"}
+
+    @app.post("/api/auth/logout")
+    def do_logout(request: Request, response: Response, db: Session = Depends(get_db)):
+        auth.logout(db, request.cookies.get(auth.SESSION_COOKIE))
+        response.delete_cookie(auth.SESSION_COOKIE)
+        return {"ok": True}
+
+    @app.get("/api/auth/me")
+    def me(request: Request, db: Session = Depends(get_db)):
+        user = auth.current_user(db, request)
+        device = auth.device_from_cookie(db, request.cookies.get(auth.DEVICE_COOKIE))
+        return {"user": {"name": user.name, "role": user.role} if user else None,
+                "device": {"name": device.name} if device else None}
+
+    @app.get("/api/devices")
+    def devices(db: Session = Depends(get_db), _=Depends(manager_only)):
+        return [{"id": d.id, "name": d.name, "paired": d.paired_at is not None, "revoked": d.revoked,
+                 "paired_at": d.paired_at.isoformat() if d.paired_at else None}
+                for d in db.scalars(select(Device).where(Device.revoked.is_(False)).order_by(Device.id.desc()))
+                if d.paired_at or (d.pairing_expires and d.pairing_expires > dt.datetime.now(dt.UTC).replace(tzinfo=None))]
+
+    @app.post("/api/devices")
+    def pair_start(body: PairStart, db: Session = Depends(get_db), _=Depends(manager_only)):
+        dev = auth.start_pairing(db, body.name)
+        return {"id": dev.id, "name": dev.name, "code": dev.pairing_code, "minutes": auth.PAIRING_MINUTES}
+
+    @app.post("/api/devices/{device_id}/revoke")
+    def revoke(device_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
+        dev = db.get(Device, device_id)
+        if not dev:
+            raise HTTPException(404, "Device not found")
+        dev.revoked = True
+        db.commit()
+        return {"ok": True}
+
+    @app.post("/api/devices/pair")
+    def pair_complete(body: PairCode, response: Response, db: Session = Depends(get_db)):
+        token, dev = auth.complete_pairing(db, body.code)
+        response.set_cookie(auth.DEVICE_COOKIE, token, max_age=5 * 365 * 24 * 3600, **cookie)
+        return {"name": dev.name}
 
     def load_cart(db: Session, lines: list[CartLine]) -> list[tuple[MenuItem, int]]:
         cart = []
@@ -83,7 +158,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # ---- cashier -----------------------------------------------------------
     @app.get("/api/menu")
-    def menu(db: Session = Depends(get_db)):
+    def menu(db: Session = Depends(get_db), _=Depends(staff)):
         items = db.scalars(select(MenuItem).options(selectinload(MenuItem.recipe).selectinload(RecipeLine.ingredient))
                            .order_by(MenuItem.id)).all()
         since = dt.date.today() - dt.timedelta(days=14)
@@ -94,7 +169,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                  "available": stock.item_available(i), "popular": i.id in popular} for i in items]
 
     @app.get("/api/today")
-    def today(db: Session = Depends(get_db)):
+    def today(db: Session = Depends(get_db), _=Depends(staff)):
         d = dt.date.today()
         orders, sales = db.execute(select(func.count(Order.id), func.coalesce(func.sum(Order.total), 0))
                                    .where(Order.business_date == d, Order.source != "history")).one()
@@ -112,11 +187,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "drafts": db.scalar(select(func.count(PurchaseOrder.id)).where(PurchaseOrder.status == "draft")) or 0}
 
     @app.post("/api/cashier/suggest")
-    def suggest(cart: Cart, db: Session = Depends(get_db)):
+    def suggest(cart: Cart, db: Session = Depends(get_db), _=Depends(staff)):
         return cashier.suggest(db, llm, load_cart(db, cart.lines))
 
     @app.post("/api/orders")
-    def place_order(cart: Cart, db: Session = Depends(get_db)):
+    def place_order(cart: Cart, db: Session = Depends(get_db), _=Depends(staff)):
         if not cart.lines:
             raise HTTPException(400, "Order is empty")
         items = load_cart(db, cart.lines)
@@ -140,7 +215,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"order_id": order.id, "total": order.total}
 
     @app.post("/api/sales/import")
-    async def import_sales(file: UploadFile, business_date: dt.date | None = None, db: Session = Depends(get_db)):
+    async def import_sales(file: UploadFile, business_date: dt.date | None = None, db: Session = Depends(get_db), _=Depends(manager_only)):
         """Daily sales report from the POS as CSV with columns item,qty. Sales already happened,
         so stock may go below zero; the stock agent then flags a missing delivery."""
         import csv
@@ -162,21 +237,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # ---- stock and the stock-to-order agent ----------------------------------
     @app.get("/api/stock")
-    def get_stock(db: Session = Depends(get_db)):
+    def get_stock(db: Session = Depends(get_db), _=Depends(manager_only)):
         return stock.stock_report(db)
 
     @app.post("/api/stock/count")
-    def stock_count(lines: list[CountLine], db: Session = Depends(get_db)):
+    def stock_count(lines: list[CountLine], db: Session = Depends(get_db), _=Depends(manager_only)):
         diffs = {db.get(Ingredient, l.ingredient_id).name: round(stock.count(db, l.ingredient_id, l.counted), 1) for l in lines}
         db.commit()
         return {"adjustments": diffs}
 
     @app.post("/api/agents/stock/run")
-    def run_stock_agent(db: Session = Depends(get_db)):
+    def run_stock_agent(db: Session = Depends(get_db), _=Depends(manager_only)):
         return stock_agent.run(db, llm)
 
     @app.get("/api/agents/runs")
-    def agent_runs(db: Session = Depends(get_db)):
+    def agent_runs(db: Session = Depends(get_db), _=Depends(manager_only)):
         runs = db.scalars(select(AgentRun).order_by(AgentRun.id.desc()).limit(20))
         return [{"id": r.id, "at": r.created_at.isoformat(), "agent": r.agent, "source": r.source,
                  **json.loads(r.summary)} for r in runs]
@@ -196,11 +271,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return po
 
     @app.get("/api/purchase-orders")
-    def list_pos(db: Session = Depends(get_db)):
+    def list_pos(db: Session = Depends(get_db), _=Depends(manager_only)):
         return [po_dict(po) for po in db.scalars(select(PurchaseOrder).order_by(PurchaseOrder.id.desc()))]
 
     @app.post("/api/purchase-orders/{po_id}/approve")
-    def approve(po_id: int, edits: list[EditLine] | None = None, db: Session = Depends(get_db)):
+    def approve(po_id: int, edits: list[EditLine] | None = None, db: Session = Depends(get_db), _=Depends(manager_only)):
         po = get_po(db, po_id)
         if po.status != "draft":
             raise HTTPException(409, f"Order is already {po.status}")
@@ -225,7 +300,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return po_dict(po) | {"email": {"to": mail.to, "status": mail.status, "error": mail.error}}
 
     @app.post("/api/purchase-orders/{po_id}/reject")
-    def reject(po_id: int, db: Session = Depends(get_db)):
+    def reject(po_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
         po = get_po(db, po_id)
         if po.status != "draft":
             raise HTTPException(409, f"Order is already {po.status}")
@@ -234,7 +309,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return po_dict(po)
 
     @app.post("/api/purchase-orders/{po_id}/receive")
-    def receive_po(po_id: int, body: Receive, db: Session = Depends(get_db)):
+    def receive_po(po_id: int, body: Receive, db: Session = Depends(get_db), _=Depends(manager_only)):
         po = get_po(db, po_id)
         if po.status != "sent":
             raise HTTPException(409, "Only sent orders can be received")
@@ -245,7 +320,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return po_dict(po)
 
     @app.post("/api/deliveries")
-    def manual_delivery(body: Receive, db: Session = Depends(get_db)):
+    def manual_delivery(body: Receive, db: Session = Depends(get_db), _=Depends(manager_only)):
         for l in body.lines:
             if not db.get(Ingredient, l.ingredient_id):
                 raise HTTPException(404, f"Ingredient {l.ingredient_id} not found")
@@ -254,7 +329,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"received": len(body.lines)}
 
     @app.post("/api/invoices/read")
-    async def read_invoice(file: UploadFile, db: Session = Depends(get_db)):
+    async def read_invoice(file: UploadFile, db: Session = Depends(get_db), _=Depends(manager_only)):
         if not llm.enabled:
             raise HTTPException(503, "Reading invoice photos needs the AI key. Enter the delivery manually instead.")
         if file.content_type not in ("image/jpeg", "image/png", "image/webp", "image/gif"):
@@ -265,13 +340,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return out
 
     @app.get("/api/outbox")
-    def outbox(db: Session = Depends(get_db)):
+    def outbox(db: Session = Depends(get_db), _=Depends(manager_only)):
         return [{"id": m.id, "at": m.created_at.isoformat(), "to": m.to, "subject": m.subject, "body": m.body,
                  "status": m.status, "error": m.error} for m in db.scalars(select(Outbox).order_by(Outbox.id.desc()))]
 
     # ---- insights --------------------------------------------------------------
     @app.get("/api/insights/cashier")
-    def cashier_insights(db: Session = Depends(get_db)):
+    def cashier_insights(db: Session = Depends(get_db), _=Depends(manager_only)):
         shown = db.scalar(select(func.count(SuggestionEvent.id))) or 0
         accepted = db.scalar(select(func.count(SuggestionEvent.id)).where(SuggestionEvent.accepted)) or 0
         revenue = db.scalar(select(func.sum(OrderLine.price * OrderLine.qty)).where(OrderLine.from_suggestion)) or 0
@@ -282,13 +357,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "added_revenue": round(revenue, 2), "top_accepted": [{"name": n, "count": c} for n, c in top]}
 
     # ---- web app ---------------------------------------------------------------
-    @app.get("/")
-    def index():
-        return FileResponse(STATIC / "cashier.html")
+    def page(name: str, role: str | None):
+        def view(request: Request, db: Session = Depends(get_db)):
+            user = auth.current_user(db, request)
+            if role and (not user or user.role != role):
+                return RedirectResponse("/login")
+            return FileResponse(STATIC / name)
+        return view
 
-    @app.get("/manager")
-    def manager():
-        return FileResponse(STATIC / "manager.html")
+    @app.get("/")
+    def index(request: Request, db: Session = Depends(get_db)):
+        user = auth.current_user(db, request)
+        return RedirectResponse({"cashier": "/cashier", "manager": "/manager"}.get(user.role if user else "", "/login"))
+
+    app.get("/login")(page("login.html", None))
+    app.get("/cashier")(page("cashier.html", "cashier"))
+    app.get("/manager")(page("manager.html", "manager"))
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

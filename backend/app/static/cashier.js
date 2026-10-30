@@ -7,6 +7,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  if (res.status === 401) { location.href = "/login"; throw new Error("Signed out"); }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.detail || `Request failed (${res.status})`);
   return body;
@@ -36,6 +37,7 @@ function renderMenu() {
   for (const item of items) {
     const b = document.createElement("button");
     b.className = "card";
+    if (["Waffles", "Drinks"].includes(item.category)) b.dataset.tone = "coral";
     b.disabled = !item.available;
     const flag = !item.available ? "Out of stock" : item.popular ? "Popular" : "";
     b.innerHTML = `${flag ? `<span class="flag">${flag}</span>` : ""}<div class="tile">${icon(item.category)}</div>
@@ -129,9 +131,11 @@ async function charge() {
 async function init() {
   $("search-icon").innerHTML = ICONS.search;
   $("spark").innerHTML = ICONS.spark;
-  $("mgr-link").innerHTML = `${ICONS.manager}Manager`;
+  $("logout").innerHTML = `${ICONS.logout}Sign out`;
+  $("logout").onclick = async () => { await api("/api/auth/logout", { method: "POST" }); location.href = "/login"; };
   const [status, menu] = await Promise.all([api("/api/status"), api("/api/menu")]);
-  $("store").textContent = `${status.store} · ${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}`;
+  const me = await api("/api/auth/me");
+  $("store").textContent = `${me.user.name} · ${me.device?.name ?? ""} · ${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}`;
   $("ai-badge").textContent = status.ai_enabled ? "AI on" : "Rules mode";
   $("ai-badge").classList.toggle("on", status.ai_enabled);
   state.menu = menu;

@@ -7,9 +7,9 @@
 **AI agents that run the two jobs every restaurant forgets to do on a busy day:**<br>
 **sell a little more at the cashier, and never run out of what you sell.**
 
-![Status](https://img.shields.io/badge/status-in%20development-1F2937?style=for-the-badge&labelColor=B7BFCC)
-![Agents](https://img.shields.io/badge/agents-2%20built%20%C2%B7%206%20planned-1F2937?style=for-the-badge&labelColor=B7BFCC)
-![Human approval](https://img.shields.io/badge/manager%20approves-spend%20%26%20changes-1F2937?style=for-the-badge&labelColor=B7BFCC)
+![Status](https://img.shields.io/badge/status-in%20development-5B4CFF?style=for-the-badge&labelColor=FF6B4A)
+![Agents](https://img.shields.io/badge/agents-2%20built%20%C2%B7%206%20planned-5B4CFF?style=for-the-badge&labelColor=FF6B4A)
+![Human approval](https://img.shields.io/badge/manager%20approves-spend%20%26%20changes-5B4CFF?style=for-the-badge&labelColor=FF6B4A)
 
 <img src="assets/restaura-banner.png" alt="Restaura: AI agents for your restaurant" width="100%">
 
@@ -102,7 +102,14 @@ pip install -e ".[dev]"
 python -m uvicorn app.main:create_app --factory --port 8000
 ```
 
-Open http://localhost:8000 for the cashier screen (tablet or laptop) and http://localhost:8000/manager for the manager app (phone first). The app starts with sample data. Without `ANTHROPIC_API_KEY` the agents run in rules mode; set the key (see [`.env.example`](.env.example)) to switch them to Claude.
+Open http://localhost:8000 and sign in. Each account gets its own screens:
+
+| Account | Where it works | Screens |
+| --- | --- | --- |
+| `manager` | Any device, phone first | Today, supplier orders, stock, deliveries, cashier devices |
+| `cashier` | Only on a device the manager paired as the cashier iPad | The cashier screen |
+
+To pair the cashier iPad, sign in as the manager, tap **Pair a cashier iPad** and enter the 6-digit code on the iPad's sign-in page. Demo passwords come from `MANAGER_PASSWORD` and `CASHIER_PASSWORD` (see [`.env.example`](.env.example)); set your own before sharing the app. The app starts with sample data. Without `ANTHROPIC_API_KEY` the agents run in rules mode; set the key (see [`.env.example`](.env.example)) to switch them to Claude.
 
 Run the tests with `python -m pytest` inside `backend/`.
 
@@ -121,7 +128,7 @@ No keys or `.env` files are committed to this repository. The API key is supplie
 
 ## Brand
 
-Slate `#1F2937` · Silver `#B7BFCC` · Cloud `#F8FAFC`. Logo files and usage rules are in [docs/BRAND.md](docs/BRAND.md).
+Electric indigo `#5B4CFF` · Coral `#FF6B4A` · a silver cloche. Logo files and usage rules are in [docs/BRAND.md](docs/BRAND.md).
 
 ---
 

@@ -16,6 +16,10 @@ class Settings:
     smtp_from: str = field(default_factory=lambda: os.getenv("SMTP_FROM", "orders@restaura.local"))
     # In a demo, every supplier email can be redirected to one inbox you control.
     demo_supplier_email: str | None = field(default_factory=lambda: os.getenv("DEMO_SUPPLIER_EMAIL") or None)
+    # Demo accounts are created on first start. Set your own passwords before showing the app to anyone.
+    manager_password: str = field(default_factory=lambda: os.getenv("MANAGER_PASSWORD", "manager-demo"))
+    cashier_password: str = field(default_factory=lambda: os.getenv("CASHIER_PASSWORD", "cashier-demo"))
+    secure_cookies: bool = field(default_factory=lambda: os.getenv("SECURE_COOKIES", "0") == "1")
     seed_demo_data: bool = field(default_factory=lambda: os.getenv("SEED_DEMO_DATA", "1") == "1")
 
 

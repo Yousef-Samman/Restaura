@@ -133,3 +133,33 @@ class AgentRun(Base):
     agent: Mapped[str] = mapped_column(String(30))
     source: Mapped[str] = mapped_column(String(10))  # ai | rules
     summary: Mapped[str] = mapped_column(Text)
+
+
+class User(Base):
+    __tablename__ = "app_user"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(60), unique=True)
+    name: Mapped[str] = mapped_column(String(120))
+    role: Mapped[str] = mapped_column(String(20))  # cashier | manager
+    password_hash: Mapped[str] = mapped_column(String(200))
+
+
+class Device(Base):
+    """A device the manager has paired as a cashier station. Cashiers can only sign in on one of these."""
+    __tablename__ = "device"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    token_hash: Mapped[str | None] = mapped_column(String(100), unique=True)
+    pairing_code: Mapped[str | None] = mapped_column(String(10))
+    pairing_expires: Mapped[dt.datetime | None] = mapped_column(DateTime)
+    paired_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AuthSession(Base):
+    __tablename__ = "auth_session"
+    token_hash: Mapped[str] = mapped_column(String(100), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"))
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("device.id"))
+    expires: Mapped[dt.datetime] = mapped_column(DateTime)
+    user: Mapped[User] = relationship()

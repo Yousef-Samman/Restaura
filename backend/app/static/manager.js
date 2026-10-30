@@ -14,6 +14,7 @@ let status = {};
 async function api(path, opts = {}) {
   const isForm = opts.body instanceof FormData;
   const res = await fetch(path, { headers: isForm ? {} : { "Content-Type": "application/json" }, ...opts });
+  if (res.status === 401) { location.href = "/login"; throw new Error("Signed out"); }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.detail || `Request failed (${res.status})`);
   return body;
@@ -58,7 +59,7 @@ function agentCard(run) {
 
 const VIEWS = {
   async today() {
-    const [t, ins, runs] = await Promise.all([api("/api/today"), api("/api/insights/cashier"), api("/api/agents/runs")]);
+    const [t, ins, runs, devs] = await Promise.all([api("/api/today"), api("/api/insights/cashier"), api("/api/agents/runs"), api("/api/devices")]);
     const rate = ins.acceptance_rate == null ? "–" : `${Math.round(ins.acceptance_rate * 100)}%`;
     return `<div class="hero">
         <div><div class="label">Sales</div><div class="value num">${sar(t.sales)}</div></div>
@@ -75,6 +76,12 @@ const VIEWS = {
         </div>
         <div style="margin-top:14px">${ins.top_accepted.length ? ins.top_accepted.map((x) => `<div class="list-item"><span>${esc(x.name)}</span><b class="num">${x.count}×</b></div>`).join("") : '<div class="muted">No suggestions accepted yet.</div>'}</div>
         <div class="muted" style="font-size:13px;margin-top:10px">Add-on revenue from accepted suggestions, all time: <b>${sar(ins.added_revenue)}</b></div>
+      </div></div>
+      <div class="section"><h2>Cashier devices</h2><div class="panel">
+        <div class="muted" style="font-size:14px;margin-bottom:8px">The cashier account only works on devices paired here.</div>
+        ${devs.map((d) => `<div class="list-item"><span>${esc(d.name)}<br><span class="muted">${d.paired ? "Paired" : "Waiting for code"}</span></span><button class="secondary-btn" data-revoke="${d.id}">Remove</button></div>`).join("") || '<div class="muted">No cashier device yet.</div>'}
+        <div id="pair-out"></div>
+        <div class="btns" style="display:flex;gap:8px;margin-top:12px"><button class="pair-btn" id="pair-new">Pair a cashier iPad</button><button class="secondary-btn" id="logout">Sign out</button></div>
       </div></div>`;
   },
 
@@ -153,7 +160,15 @@ function bindAgent() {
 }
 
 const BIND = {
-  today: bindAgent,
+  today() {
+    bindAgent();
+    $("logout").onclick = async () => { await api("/api/auth/logout", { method: "POST" }); location.href = "/login"; };
+    $("pair-new").onclick = async () => {
+      const r = await api("/api/devices", { method: "POST", body: JSON.stringify({ name: "Cashier iPad" }) });
+      $("pair-out").innerHTML = `<div style="margin-top:12px"><div class="code num">${r.code}</div><div class="muted" style="font-size:13px;margin-top:8px;text-align:center">On the iPad, open Restaura, tap "Pair as cashier iPad" and enter this code. It expires in ${r.minutes} minutes.</div></div>`;
+    };
+    document.querySelectorAll("[data-revoke]").forEach((b) => (b.onclick = async () => { await api(`/api/devices/${b.dataset.revoke}/revoke`, { method: "POST" }); toast("Device removed"); render(); }));
+  },
   stock() {
     bindAgent();
     $("c-save").onclick = async () => {

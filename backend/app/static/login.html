@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14102E">
+<title>Restaura · Sign in</title>
+<link rel="icon" href="/static/logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<main class="auth">
+  <div class="box">
+    <div class="brand"><span class="mark"><img src="/static/logo.svg" alt=""></span>
+      <div><h1>Restaura</h1><div class="tag">Eight agents. One restaurant.</div></div></div>
+    <form id="login" class="form">
+      <div class="err" id="err" hidden></div>
+      <label class="field">Username<input id="u" autocomplete="username" autocapitalize="none" required></label>
+      <label class="field">Password<input id="p" type="password" autocomplete="current-password" required></label>
+      <button class="solid" type="submit">Sign in</button>
+    </form>
+    <form id="pair" class="form" hidden>
+      <div class="err" id="perr" hidden></div>
+      <div class="tag">Enter the 6-digit code from the manager app to make this iPad the cashier station.</div>
+      <label class="field">Pairing code<input id="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required></label>
+      <button class="solid" type="submit">Pair this device</button>
+      <button type="button" id="back" class="muted" style="font-weight:700">Back to sign in</button>
+    </form>
+    <div class="devline"><span id="devstate"></span><button type="button" id="topair">Pair as cashier iPad</button></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || "Something went wrong");
+  return j;
+}
+async function refresh() {
+  const me = await fetch("/api/auth/me").then((r) => r.json());
+  if (me.user) location.href = me.user.role === "cashier" ? "/cashier" : "/manager";
+  $("devstate").textContent = me.device ? `This device: ${me.device.name}` : "This device is not a cashier station";
+  $("topair").hidden = !!me.device;
+}
+const show = (pair) => { $("login").hidden = pair; $("pair").hidden = !pair; };
+$("topair").onclick = () => show(true);
+$("back").onclick = () => show(false);
+$("login").onsubmit = async (e) => {
+  e.preventDefault(); $("err").hidden = true;
+  try { const r = await post("/api/auth/login", { username: $("u").value, password: $("p").value }); location.href = r.home; }
+  catch (x) { $("err").textContent = x.message; $("err").hidden = false; }
+};
+$("pair").onsubmit = async (e) => {
+  e.preventDefault(); $("perr").hidden = true;
+  try { await post("/api/devices/pair", { code: $("code").value }); show(false); refresh(); }
+  catch (x) { $("perr").textContent = x.message; $("perr").hidden = false; }
+};
+refresh();
+</script>
+</body>
+</html>
