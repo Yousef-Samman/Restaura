@@ -215,7 +215,7 @@ async function loadToday() {
   const t = await api("/api/today");
   $("k-orders").textContent = t.orders;
   $("k-sales").textContent = sar(t.sales);
-  $("k-addons").textContent = `${t.suggestions_accepted} · ${sar(t.suggested_sales)}`;
+  $("k-addons").textContent = `${sar(t.suggested_sales)} · ${t.suggestions_accepted} sold`;
 }
 
 // clock in and out with a PIN

@@ -232,12 +232,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         d = dt.date.today()
         orders, sales = db.execute(select(func.count(Order.id), func.coalesce(func.sum(Order.total), 0))
                                    .where(Order.business_date == d, Order.source != "history")).one()
-        start = dt.datetime.combine(d, dt.time())
+        # timestamps are stored in UTC, so the store's day starts at local midnight minus the offset
+        start = dt.datetime.combine(d, dt.time()) - STORE_UTC_OFFSET
         shown = db.scalar(select(func.count(SuggestionEvent.id)).where(SuggestionEvent.created_at >= start)) or 0
-        accepted = db.scalar(select(func.count(SuggestionEvent.id))
-                             .where(SuggestionEvent.created_at >= start, SuggestionEvent.accepted)) or 0
-        addon_sales = db.scalar(select(func.coalesce(func.sum(OrderLine.price * OrderLine.qty), 0)).join(Order)
-                                .where(Order.business_date == d, OrderLine.from_suggestion)) or 0
+        # count and value come from the same sold lines, so they always agree
+        accepted, addon_sales = db.execute(select(func.coalesce(func.sum(OrderLine.qty), 0),
+                                                  func.coalesce(func.sum(OrderLine.price * OrderLine.qty), 0)).join(Order)
+                                           .where(Order.business_date == d, OrderLine.from_suggestion)).one()
         report = stock.stock_report(db)
         return {"date": d.isoformat(), "orders": orders, "sales": round(sales, 2),
                 "avg_ticket": round(sales / orders, 2) if orders else 0,

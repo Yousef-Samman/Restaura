@@ -56,6 +56,18 @@ def pair_counts(db: Session) -> tuple[dict[int, Counter], Counter]:
     return pairs, singles
 
 
+def acceptance(db: Session, days: int = 30, min_shown: int = 8) -> dict[int, float]:
+    """Share of recent offers the customer said yes to, per item, once an item has been offered enough times."""
+    since = dt.datetime.now(dt.UTC).replace(tzinfo=None) - dt.timedelta(days=days)
+    shown: Counter = Counter()
+    yes: Counter = Counter()
+    for item_id, accepted in db.execute(select(SuggestionEvent.menu_item_id, SuggestionEvent.accepted)
+                                        .where(SuggestionEvent.created_at >= since)):
+        shown[item_id] += 1
+        yes[item_id] += bool(accepted)
+    return {i: yes[i] / n for i, n in shown.items() if n >= min_shown}
+
+
 def candidates(db: Session, cart: list[tuple[MenuItem, int]], limit: int = 6,
                use_history: bool = True, use_pairing_rules: bool = True) -> list[dict]:
     """Available items ranked by how well they complete the cart. The two switches turn off one signal each,
@@ -68,6 +80,7 @@ def candidates(db: Session, cart: list[tuple[MenuItem, int]], limit: int = 6,
         for r in item.recipe:
             use[r.ingredient_id] += r.qty * qty
     pairs, singles = pair_counts(db)
+    taken = acceptance(db) if use_history else {}
     scored = []
     for item in items:
         if item.id in in_cart or not item_available(item, use):
@@ -75,6 +88,8 @@ def candidates(db: Session, cart: list[tuple[MenuItem, int]], limit: int = 6,
         # how often this item is bought with what is already in the cart, as a share of those orders
         rate = max((pairs[c][item.id] / singles[c] for c in in_cart if singles[c]), default=0.0)
         score = rate if use_history else 0.0
+        if item.id in taken:  # learn from the counter: offers customers keep turning down sink, ones they take rise
+            score += 0.3 * (taken[item.id] - 0.35)
         if not use_pairing_rules:
             scored.append({"item": item, "score": score, "bought_together_rate": round(rate, 2)})
             continue

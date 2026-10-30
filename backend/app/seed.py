@@ -89,6 +89,19 @@ def seed(db: Session, history_days: int = 30) -> None:
     db.commit()
 
 
+# sample buying habits: the drinks and add-ons each dessert is usually ordered with (illustrative)
+PAIRINGS = {
+    "Hazelnut crepe": (("Spanish latte", "Hot chocolate"), ("Extra whipped cream",)),
+    "Triple chocolate crepe": (("Americano", "Latte"), ("Scoop of vanilla ice cream",)),
+    "Strawberry crepe": (("Iced latte", "Latte"), ("Extra whipped cream",)),
+    "Banana crepe": (("Spanish latte",), ("Scoop of vanilla ice cream", "Extra whipped cream")),
+    "Pistachio kunafa crepe": (("Americano", "Spanish latte"), ("Pistachio drizzle",)),
+    "Classic chocolate waffle": (("Iced latte", "Latte"), ("Scoop of vanilla ice cream",)),
+    "Strawberry waffle": (("Iced latte",), ("Extra whipped cream", "Scoop of vanilla ice cream")),
+    "Mini pancakes": (("Hot chocolate",), ("Extra whipped cream",)),
+}
+
+
 def _seed_history(db: Session, items: list[MenuItem], days: int) -> None:
     """Past orders before the opening stock count. They teach the agents what sells together
     and how fast ingredients are used; they do not change today's stock."""
@@ -98,14 +111,18 @@ def _seed_history(db: Session, items: list[MenuItem], days: int) -> None:
     addons = [i for i in items if i.is_addon]
     today = dt.date.today()
     orders = []
+    by_name = {i.name: i for i in items}
     for d in range(days, 0, -1):
         day = today - dt.timedelta(days=d)
         for _ in range(rng.randint(35, 55)):
-            lines = [rng.choice(mains)]
+            main = rng.choice(mains)
+            lines = [main]
+            usual_drinks, usual_addons = PAIRINGS.get(main.name, ((), ()))
+            # most customers take the drink and add-on that usually go with their dessert; some pick anything
             if rng.random() < 0.55:
-                lines.append(rng.choice(drinks[1:4]) if lines[0].category == "Crepes" else rng.choice(drinks))
+                lines.append(by_name[rng.choice(usual_drinks)] if usual_drinks and rng.random() < 0.75 else rng.choice(drinks))
             if rng.random() < 0.3:
-                lines.append(addons[0] if lines[0].category != "Drinks" else rng.choice(addons))
+                lines.append(by_name[rng.choice(usual_addons)] if usual_addons and rng.random() < 0.75 else rng.choice(addons))
             order = Order(business_date=day, source="history", total=sum(i.price for i in lines))
             order.lines = [OrderLine(menu_item_id=i.id, qty=1, price=i.price) for i in lines]
             db.add(order)
