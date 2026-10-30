@@ -76,23 +76,27 @@ def stock_report(db: Session) -> list[dict]:
 
 
 def plan_reorders(db: Session) -> list[dict]:
-    """Ingredients at or below minimum with no open order, and how much to order:
-    back up to par, plus expected use until the supplier delivers."""
+    """Ingredients with no open order that are at or below minimum, or that will run out before
+    the supplier could deliver an order placed tomorrow. Quantity: back up to par, plus expected use
+    until the supplier delivers."""
     use = avg_daily_use(db)
     already = open_order_ingredients(db)
     plan = []
     for ing in db.scalars(select(Ingredient)):
-        if ing.id in already or ing.on_hand > ing.min_level:
-            continue
         daily = use.get(ing.id, 0.0)
         lead = ing.supplier.lead_days
+        runs_out_soon = daily > 0 and ing.on_hand / daily <= lead + 1
+        if ing.id in already or (ing.on_hand > ing.min_level and not runs_out_soon):
+            continue
         qty = max(ing.par_level - max(ing.on_hand, 0), 0) + daily * lead
         step = 1 if ing.unit == "pcs" else 100
         qty = math.ceil(qty / step) * step
         plan.append({
             "ingredient": ing, "qty": qty, "daily": daily, "lead": lead,
-            "reason": f"On hand {ing.on_hand:.0f} {ing.unit}, minimum {ing.min_level:.0f}. "
-                      f"Ordering enough to refill to {ing.par_level:.0f} {ing.unit}, plus {lead} {'day' if lead == 1 else 'days'} of use "
+            "reason": (f"On hand {ing.on_hand:.0f} {ing.unit}, minimum {ing.min_level:.0f}. " if ing.on_hand <= ing.min_level else
+                       f"On hand {ing.on_hand:.0f} {ing.unit} lasts about {ing.on_hand / daily:.1f} days at {daily:.0f} {ing.unit}/day, "
+                       f"and {ing.supplier.name} needs {lead} {'day' if lead == 1 else 'days'} to deliver. ")
+                      + f"Ordering enough to refill to {ing.par_level:.0f} {ing.unit}, plus {lead} {'day' if lead == 1 else 'days'} of use "
                       f"({daily:.0f} {ing.unit}/day) until the delivery arrives.",
         })
     return plan

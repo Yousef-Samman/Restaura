@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from . import auth, finance, forecast, mailer, stock
-from .agents import cashier, invoice, stock_agent
+from .agents import cashier, invoice, overview, stock_agent
 from .agents.llm import LLM
 from .config import Settings, get_settings
 from .db import Base, make_engine, make_sessionmaker
@@ -271,6 +271,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "categories": [{"category": c, "sales": round(v, 2)} for c, v in cats],
             "today_orders": [{"at": a.isoformat() + "Z", "total": t} for a, t in today_orders],
         }
+
+    # ---- manager overview ------------------------------------------------------------
+    @app.get("/api/overview")
+    def get_overview(db: Session = Depends(get_db), _=Depends(manager_only)):
+        f = overview.facts(db)
+        return {"facts": f, "priorities": overview.priorities(f)}
+
+    @app.post("/api/agents/overview/run")
+    def run_overview(db: Session = Depends(get_db), _=Depends(manager_only)):
+        return overview.run(db, llm)
 
     # ---- forecast ------------------------------------------------------------------
     @app.get("/api/forecast")

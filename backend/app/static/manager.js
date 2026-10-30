@@ -137,7 +137,8 @@ const VIEWS = {
   },
 
   async today() {
-    const [t, ins, runs, devs] = await Promise.all([api("/api/today"), api("/api/insights/cashier"), api("/api/agents/runs"), api("/api/devices")]);
+    const [t, ins, runs, devs, ov] = await Promise.all([api("/api/today"), api("/api/insights/cashier"), api("/api/agents/runs"), api("/api/devices"), api("/api/overview")]);
+    const brief = runs.find((r) => r.agent === "overview");
     const rate = ins.acceptance_rate == null ? "–" : `${Math.round(ins.acceptance_rate * 100)}%`;
     return `<div class="hero">
         <div><div class="label">Sales</div><div class="value num">${sar(t.sales)}</div></div>
@@ -145,6 +146,20 @@ const VIEWS = {
         <div><div class="label">Avg. ticket</div><div class="value num">${sar(t.avg_ticket)}</div></div>
         <div><div class="label">Helper sales</div><div class="value num">${sar(t.suggested_sales)}</div></div>
       </div>
+      <div class="section"><div class="agent">
+        <div class="head">${ICONS.spark}Manager overview</div>
+        <div class="headline">${brief ? esc(brief.headline) : "Tap below for a briefing across sales, stock, orders and costs."}</div>
+        ${(brief?.points || []).map((p) => `<div class="meta" style="font-size:14px;color:#fff;opacity:.9">• ${esc(p)}</div>`).join("")}
+        ${brief ? `<div class="meta">Last briefing ${new Date(brief.at + "Z").toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} · ${brief.source === "ai" ? "written by Claude" : "rules mode"}</div>` : ""}
+        <button id="run-overview">Brief me now</button>
+      </div></div>
+      <div class="section"><h2>Needs you</h2><div class="panel">
+        ${ov.priorities.map((p) => `<button class="more-row need ${p.level}" ${p.go ? `data-go="${p.go}"` : "disabled"}><span class="lvl"></span><span>${esc(p.text)}</span>${p.go ? ICONS.chevron : ""}</button>`).join("")}
+      </div></div>
+      <div class="section"><div class="hero" style="margin:0">
+        <div><div class="label">Forecast tomorrow</div><div class="value num">${sar(ov.facts.forecast_tomorrow)}</div></div>
+        <div><div class="label">Profit, 7 days</div><div class="value num" style="color:${ov.facts.profit_7d >= 0 ? "var(--ok)" : "var(--bad)"}">${sar(ov.facts.profit_7d)}</div></div>
+      </div></div>
       <div class="section">${agentCard(runs.find((r) => r.agent === "stock"))}</div>
       <div class="section"><h2>Cashier helper</h2><div class="panel">
         <div class="hero" style="margin:0;box-shadow:none;padding:0;grid-template-columns:repeat(3,minmax(0,1fr))">
@@ -305,6 +320,11 @@ const BIND = {
   },
   today() {
     bindAgent();
+    document.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
+    $("run-overview").onclick = async (ev) => {
+      ev.target.disabled = true; ev.target.textContent = "Reading every section…";
+      try { await api("/api/agents/overview/run", { method: "POST" }); render(); } catch (e) { toast(e.message, true); ev.target.disabled = false; }
+    };
     $("logout").onclick = async () => { await api("/api/auth/logout", { method: "POST" }); location.href = "/login"; };
     $("pair-new").onclick = async () => {
       const r = await api("/api/devices", { method: "POST", body: JSON.stringify({ name: "Cashier iPad" }) });
