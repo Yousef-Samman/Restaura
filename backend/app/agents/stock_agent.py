@@ -63,6 +63,23 @@ TOOLS = [
 ]
 
 
+CHANGE_MARK = " The agent changed "
+
+
+def split_change(reason: str | None) -> tuple[str, dict | None]:
+    """An order line's reason, split into the code's reasoning and the agent's change to it, if any:
+    ('...', {'from': 7300.0, 'to': 10900.0, 'reason': '...'})."""
+    base, mark, rest = (reason or "").partition(CHANGE_MARK)
+    if not mark:
+        return base, None
+    try:
+        nums, _, why = rest.partition(": ")
+        old, _, new = nums.partition(" to ")
+        return base, {"from": float(old), "to": float(new.split(" ")[0]), "reason": why.strip()}
+    except ValueError:
+        return base, None
+
+
 def _plural(n: int, w: str) -> str:
     return f"{n} {w}" + ("" if n == 1 else "s")
 
@@ -214,7 +231,7 @@ def run(db: Session, llm: LLM) -> dict:
     for supplier, staged in check.staged.items():
         po = PurchaseOrder(supplier=staged["lines"][0]["ingredient"].supplier, status="draft", note=staged["note"])
         po.lines = [PurchaseOrderLine(ingredient=p["ingredient"], qty=p["qty"], reason=p["reason"] + (
-            f" The agent changed {p['code_qty']:g} to {p['qty']:g} {p['ingredient'].unit}: {p['adjust_reason']}"
+            f"{CHANGE_MARK}{p['code_qty']:g} to {p['qty']:g} {p['ingredient'].unit}: {p['adjust_reason']}"
             if p["qty"] != p["code_qty"] else "")) for p in staged["lines"]]
         db.add(po)
         orders.append(po)

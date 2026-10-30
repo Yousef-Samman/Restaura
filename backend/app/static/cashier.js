@@ -53,6 +53,7 @@ function renderMenu() {
 function render() { renderCats(); renderMenu(); }
 
 function add(item, eventId = null) {
+  state.paid = null;
   const line = state.cart.find((l) => l.item.id === item.id);
   if (line) { line.qty += 1; if (eventId) line.eventId = eventId; }
   else state.cart.push({ item, qty: 1, eventId });
@@ -65,7 +66,8 @@ function renderCart() {
   ul.innerHTML = "";
   const n = state.cart.reduce((s, l) => s + l.qty, 0);
   $("count").textContent = n ? `${n} item${n > 1 ? "s" : ""}` : "";
-  if (!state.cart.length) ul.innerHTML = `<li class="empty-order">${ICONS.bag}<div>Tap an item to start an order</div></li>`;
+  if (!state.cart.length && state.paid) ul.innerHTML = `<li class="paid"><span class="tick">${ICONS.check}</span><b>Paid · ${sar(state.paid.total)}</b><span>Order #${state.paid.id}${state.paid.addons ? ` · ${state.paid.addons} add-on${state.paid.addons > 1 ? "s" : ""} from the helper` : ""}</span></li>`;
+  else if (!state.cart.length) ul.innerHTML = `<li class="empty-order">${ICONS.bag}<div>Tap an item to start an order</div></li>`;
   for (const l of state.cart) {
     const li = document.createElement("li");
     li.className = "line";
@@ -82,8 +84,8 @@ function renderCart() {
   $("subtotal").textContent = sar2(net);
   $("vat").textContent = sar2(total - net);
   $("total").textContent = sar(total);
-  $("charge").disabled = !state.cart.length;
-  $("charge").textContent = state.cart.length ? `Charge ${sar(total)}` : "Charge";
+  $("charge").disabled = !state.cart.length && !state.paid;
+  $("charge").textContent = state.cart.length ? `Charge ${sar(total)}` : state.paid ? "Next customer" : "Charge";
 }
 
 async function refreshSuggestions() {
@@ -99,7 +101,7 @@ async function refreshSuggestions() {
     for (const s of out.suggestions) {
       const d = document.createElement("div");
       d.className = "s";
-      d.innerHTML = `<span class="pitch">“${esc(s.pitch)}”</span><span class="why">${esc(s.reason)}</span><button class="add">+ Add ${esc(s.name)} · ${sar(s.price)}</button>`;
+      d.innerHTML = `<span class="pitch">“${esc(s.pitch)}”</span><span class="why">${esc(s.reason)}</span><button class="add">+ ${sar(s.price)}</button>`;
       d.querySelector("button").setAttribute("aria-label", `Add ${s.name}`);
       d.querySelector("button").onclick = () => add(state.menu.find((i) => i.id === s.item_id), s.event_id);
       box.append(d);
@@ -115,10 +117,11 @@ async function loadToday() {
 }
 
 async function charge() {
+  if (state.paid && !state.cart.length) { state.paid = null; renderCart(); refreshSuggestions(); return; }
   $("charge").disabled = true;
   try {
     const out = await api("/api/orders", { method: "POST", body: JSON.stringify({ lines: state.cart.map((l) => ({ item_id: l.item.id, qty: l.qty, suggestion_event_id: l.eventId })) }) });
-    toast(`Order #${out.order_id} charged · ${sar(out.total)}`);
+    state.paid = { id: out.order_id, total: out.total, addons: state.cart.filter((l) => l.eventId).length };
     state.cart = [];
     renderCart();
     refreshSuggestions();

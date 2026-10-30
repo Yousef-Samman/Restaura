@@ -74,7 +74,10 @@ def test_agent_adjusts_within_limits_and_explains(ai_client, monkeypatch):
     first = plan["first"]
     line = next(l for po in ai_client.get("/api/purchase-orders").json() for l in po["lines"] if l["ingredient"] == first["ingredient"])
     assert line["qty"] == first["allowed_range"][1] and line["qty"] != first["qty"]
-    assert "The agent changed" in line["reason"] and "busy weekend" in line["reason"]
+    assert "The agent changed" not in line["reason"]
+    assert line["change"]["from"] == first["qty"] and line["change"]["to"] == line["qty"] and "busy weekend" in line["change"]["reason"]
+    po = next(po for po in ai_client.get("/api/purchase-orders").json() if any(l["change"] for l in po["lines"]))
+    assert po["changed"] and ai_client.get("/api/today").json()["changed_drafts"] == 1
     labels = [s["label"] for s in run["steps"]]
     assert labels[0] == "Checked stock levels" and f"Changed {first['ingredient']}" in labels and labels[-1] == "Wrote the briefing"
     assert ai_client.get("/api/agents/runs").json()[0]["steps"] == run["steps"]
