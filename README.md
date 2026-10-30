@@ -100,7 +100,7 @@ One command runs it all and writes the report; CI runs it on every push.
 ```bash
 cd backend
 pip install -e ".[dev,eval]"
-python -m pytest          # 60 tests: features, robustness, and regression checks on the evaluation
+python -m pytest          # 66 tests: features, robustness, and regression checks on the evaluation
 python -m evals           # held-out evaluation, rules only (no key needed)
 python -m evals --ai      # also the Claude path, with a small model to keep costs low
 ```
@@ -113,6 +113,9 @@ Latest run, from [`backend/evals/RESULTS.md`](backend/evals/RESULTS.md):
 | Forecast | Real U Walk sales, last 6 weeks, average error over the next 7 days (lower is better) | Same day last week 23.8% | 20.8% (previous method 26.4%) |
 | Stock-to-order | Hand-worked scenario; 300 random stores | | 6/6 order lines exact; 100% recall and precision |
 | Invoice reader | Drawn invoices with known values: clean, blurry, phone photo, smudged | | 100% of lines read right in every condition; never guessed a covered number |
+
+The manager app shows the latest results under **More › Agent evaluation**, and can run the checks again from there.
+`python -m evals --with-tests` also records which tests passed, for that page.
 
 What the tests found and what changed because of them: [`backend/evals/IMPROVEMENTS.md`](backend/evals/IMPROVEMENTS.md).
 

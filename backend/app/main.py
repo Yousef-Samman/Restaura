@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import auth, finance, forecast, mailer, routines, sales_report, staff as staffing, stock
+from . import auth, evaluation, finance, forecast, mailer, routines, sales_report, staff as staffing, stock
 from .agents import cashier, invoice, overview, stock_agent
 from .agents.llm import LLM
 from .config import Settings, get_settings
@@ -545,6 +545,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                          .order_by(func.count(SuggestionEvent.id).desc()).limit(5)).all()
         return {"shown": shown, "accepted": accepted, "acceptance_rate": round(accepted / shown, 3) if shown else None,
                 "added_revenue": round(revenue, 2), "top_accepted": [{"name": n, "count": c} for n, c in top]}
+
+    # ---- agent evaluation ------------------------------------------------------
+    runner = evaluation.Runner(settings.eval_results)
+
+    @app.get("/api/evaluation")
+    def get_evaluation(_=Depends(manager_only)):
+        r = evaluation.load(settings.eval_results)
+        return {"running": runner.running, "error": runner.error, "results": evaluation.view(r) if r else None}
+
+    @app.post("/api/evaluation/run")
+    def run_evaluation(_=Depends(manager_only)):
+        if not runner.start():
+            raise HTTPException(409, "The checks are already running")
+        return {"running": True}
 
     # ---- web app ---------------------------------------------------------------
     def page(name: str, role: str | None):

@@ -20,6 +20,13 @@ def markdown(r: dict) -> str:
         f"({'rules and Claude, model ' + run['ai_model'] if run['ai_model'] else 'rules only, no Claude key'}), in {run['seconds']} s. "
         "Every number below is in `evals/results/latest.json`. How each test works is in the docstring at the top of its file.",
         "",
+    ]
+    if run.get("ai_at") and run["ai_at"] != run["at"]:
+        lines += [f"Claude results are from the last run with Claude, on {run['ai_at']}.", ""]
+    t = r.get("tests")
+    if t and "total" in t:
+        lines += [f"Test suite ({t['at']}): {t['passed']} of {t['total']} tests passed.", ""]
+    lines += [
         "## 1. Cashier helper (held out by date)",
         "",
         "Trained on orders before the last 7 days, tested on the last 7 days. A case is a point in a real order where the "

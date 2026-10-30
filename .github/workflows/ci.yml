@@ -28,7 +28,7 @@ jobs:
       - name: Tests, robustness and regression checks
         run: pytest -q
       - name: Evaluation (rules only, no key)
-        run: python -m evals
+        run: python -m evals --keep-ai
       - name: Evaluation with Claude
         if: github.event_name == 'workflow_dispatch' && inputs.ai
         env:

@@ -16,6 +16,7 @@ const MORE = [
   { id: "expenses", label: "Expenses", icon: "wallet", sub: "Costs and estimated profit" },
   { id: "routines", label: "Routines", icon: "check", sub: "Opening, mid-shift and closing checklists" },
   { id: "staff", label: "Staff", icon: "people", sub: "Shifts, attendance and hours" },
+  { id: "evaluation", label: "Agent evaluation", icon: "gauge", sub: "How the AI agents score on data they have never seen" },
 ];
 const SECTION = (id) => [...TABS, ...MORE].find((t) => t.id === id);
 let expDays = 30;
@@ -53,7 +54,7 @@ function go(t) { tab = t; location.hash = t; render(); window.scrollTo(0, 0); }
 async function render() {
   if (!SECTION(tab)) tab = "today";
   $("title").textContent = SECTION(tab).label;
-  document.body.classList.toggle("has-hero", ["today", "forecast"].includes(tab));
+  document.body.classList.toggle("has-hero", ["today", "forecast", "evaluation"].includes(tab));
   renderTabs();
   const view = $("view");
   try { view.innerHTML = await VIEWS[tab](); BIND[tab]?.(); }
@@ -69,6 +70,25 @@ function agentCard(run) {
     ${run ? `<div class="meta">Last check ${when} · ${run.source === "ai" ? "written by Claude" : "rules mode"}</div>` : ""}
     <button id="run-agent">Run stock check now</button>
   </div>`;
+}
+
+const pct = (v) => `${Number(v).toFixed(1)}%`;
+const when = (iso) => new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+let evalStore = "own";
+let evalPoll = null;
+
+function evBars(rows, { max = 100 } = {}) {
+  return `<div class="ev-bars">${rows.map((r) => `<div class="ev-bar ${r.kind}"><div class="top"><span>${esc(r.label)}</span><span class="val num">${pct(r.value)}</span></div>
+    <div class="track"><div class="fill" style="width:${Math.max(2, (100 * r.value) / max)}%"></div></div></div>`).join("")}</div>`;
+}
+
+function evCashier(c) {
+  const d = c[evalStore] || c.own;
+  const lift = d.lift > 0 ? `<span class="chip ok">+${Math.round(d.lift)} pts</span>` : `<span class="chip low">Ties</span>`;
+  const note = evalStore === "own"
+    ? `${d.cases} held-out cases from a store whose customers pair items in their own way. The helper learns this from the orders.`
+    : `${d.cases} cases. The demo data pairs items almost at random, so best sellers are already close to the best possible answer.`;
+  return { lift, body: `${evBars(d.rows)}<p class="ev-note">${note}</p>` };
 }
 
 const VIEWS = {
@@ -150,6 +170,76 @@ const VIEWS = {
       <div class="section panel chart-card"><h3>Tomorrow's prep</h3><div class="sub">Expected items sold, ${day(f.days[1].date, { weekday: "long" })}</div><div id="c-prep"></div></div>
       <div class="section"><h2>Ingredients for the next 7 days</h2><div class="panel">
         ${f.ingredients.map((i) => `<div class="list-item"><span>${esc(i.name)}<br><span class="muted">Need ${fmt(Math.ceil(i.need))} ${i.unit} · on hand ${fmt(i.on_hand)} ${i.unit}</span></span>${i.runs_out ? `<span class="chip negative">Runs out ${day(i.runs_out, { weekday: "short" })}</span>` : '<span class="chip received">Enough</span>'}</div>`).join("")}
+      </div></div>`;
+  },
+
+  async evaluation() {
+    const { running, error, results: e } = await api("/api/evaluation");
+    window._ev = e;
+    if (!e) return `<div class="hero"><div><div class="label">Agent evaluation</div><div class="value">Not run yet</div></div></div>
+      <div class="section panel">Run <code>python -m evals --with-tests</code> in <code>backend/</code>, or tap below.</div>
+      <div class="section"><div class="agent"><button id="ev-run" ${running ? "disabled" : ""}>${running ? "Running the checks…" : "Run the checks"}</button></div></div>`;
+    const s = e.summary, c = evCashier(e.cashier), f = e.forecast, st = e.stock, inv = e.invoice;
+    const tick = `<span class="ev-tick">${ICONS.check}</span>`;
+    const head = (icon, title, sub, chip) => `<div class="ev-head"><span class="ic">${ICONS[icon]}</span><div><h3>${title}</h3><div class="sub">${sub}</div></div>${chip}</div>`;
+    return `<div class="hero">
+        <div><div class="label">Checks passed</div><div class="value num" style="color:${s.checks_passed === s.checks_total ? "var(--ok)" : "var(--bad)"}">${s.checks_passed ?? "–"}<small> / ${s.checks_total ?? "–"}</small></div></div>
+        <div><div class="label">Agents tested</div><div class="value num">${s.agents}</div></div>
+        <div><div class="label">Unseen test cases</div><div class="value num">${s.cases.toLocaleString("en-US")}</div></div>
+        <div><div class="label">Fixed by testing</div><div class="value num">${s.fixes}</div></div>
+      </div>
+      <div class="section"><div class="agent">
+        <div class="head">${ICONS.spark}Verdict</div>
+        <div class="headline">${esc(e.verdict.headline)}</div>
+        <ol class="ev-points">${e.verdict.points.map((p) => `<li><span><b>${esc(p.agent)}</b> ${esc(p.text)}</span></li>`).join("")}</ol>
+        ${error ? `<div class="warn">${esc(error)}</div>` : ""}
+        <div class="meta">Checks run ${when(e.run.at)}${e.run.ai_at ? ` · Claude results ${when(e.run.ai_at)}` : ""}</div>
+        <button id="ev-run" ${running ? "disabled" : ""}>${running ? "Running the checks…" : "Run the checks again"}</button>
+      </div></div>
+
+      <div class="section"><h2>By agent</h2><div class="ev-stack">
+        <div class="panel ev-card">
+          ${head("bag", "Cashier helper", "Last 7 days of orders, held out", `<span id="ev-lift">${c.lift}</span>`)}
+          <p class="ev-ask">How often was one of the two suggestions something the customer really added?</p>
+          <div class="seg ev-seg" role="group" aria-label="Which store"><button data-store="own" aria-pressed="${evalStore === "own"}">Store with its own habits</button><button data-store="demo" aria-pressed="${evalStore === "demo"}">Demo sample data</button></div>
+          <div id="ev-cashier">${c.body}</div>
+        </div>
+
+        <div class="panel ev-card">
+          ${head("sales", "Sales forecast", `${esc(f.data)} · last 6 weeks`, `<span class="chip ok">${f.after < f.before ? "Improved" : "Checked"}</span>`)}
+          <p class="ev-ask">Forecasting each of the next 7 days, how far off was it on average? Lower is better.</p>
+          <div class="ev-ba"><div class="s before"><span class="l">Before testing</span><span class="v num">${pct(f.before)}</span></div>
+            <span class="arrow">${ICONS.chevron}</span>
+            <div class="s after"><span class="l">Now</span><span class="v num">${pct(f.after)}</span></div></div>
+          ${evBars(f.rows, { max: Math.max(...f.rows.map((r) => r.value)) })}
+          <details class="ev-more"><summary>How this was tested</summary><p>Each day, the forecast is made from the days before it only, then compared with what really sold, over ${f.days} days of sales. ${f.data.startsWith("Real") ? "Only percentages are shown, so the store's revenue stays private." : ""}</p></details>
+        </div>
+
+        <div class="panel ev-card">
+          ${head("stock", "Stock-to-order agent", `Worked example + ${st.stores} random stores`, `<span class="chip ok">${st.right === st.expected && st.recall === 100 && st.precision === 100 ? "All correct" : "Check"}</span>`)}
+          <p class="ev-ask">Does it order the right amount of the right things, and nothing else?</p>
+          <div class="ev-rings">
+            <div class="ring"><div class="dial" style="--p:${(100 * st.right) / st.expected}"><span class="num">${st.right}/${st.expected}</span></div><div class="cap">Order lines exactly right</div></div>
+            <div class="ring"><div class="dial" style="--p:${st.recall}"><span class="num">${Math.round(st.recall)}%</span></div><div class="cap">Needed orders made</div></div>
+            <div class="ring"><div class="dial" style="--p:${st.precision}"><span class="num">${Math.round(st.precision)}%</span></div><div class="cap">Orders really needed</div></div>
+          </div>
+          ${st.claude_numbers_ok === null ? "" : `<div class="ev-callout">${ICONS.spark}<span>Claude writes the notes, but the amounts always come from the code${st.claude_numbers_ok ? ", and every number in Claude's notes is one on the order" : ". Some numbers in Claude's notes were not on the order"}.</span></div>`}
+        </div>
+
+        ${inv ? `<div class="panel ev-card">
+          ${head("orders", "Invoice reader", `${inv.lines} lines, ${inv.conditions.length} photo conditions`, `<span class="chip ok">${Math.round(Math.min(...inv.conditions.map((x) => x.value)))}%</span>`)}
+          <p class="ev-ask">Lines read right: quantity, price and which ingredient it is.</p>
+          <div class="ev-conds">${inv.conditions.map((x) => `<div class="cond ${x.key}"><div class="doc"><i></i><i></i><i></i><i></i></div><b class="num">${Math.round(x.value)}%</b><span>${esc(x.name)}</span></div>`).join("")}</div>
+          ${inv.smudge_total ? `<div class="ev-callout">${ICONS.clock}<span>When a number is covered, it ${inv.smudge_said === inv.smudge_total ? "says it can't read it instead of guessing" : "says so or works it out, never guessing a wrong number"} (${inv.smudge_ok} of ${inv.smudge_total}).</span></div>` : ""}
+        </div>` : ""}
+      </div></div>
+
+      ${e.robustness.length ? `<div class="section"><h2>When things go wrong</h2><div class="panel"><ul class="ev-checks">
+        ${e.robustness.map((g) => `<li>${g.passed === g.total ? tick : `<span class="ev-tick bad">!</span>`}<span>${esc(g.text)}</span><span class="count num">${g.passed}/${g.total}</span></li>`).join("")}
+      </ul></div></div>` : ""}
+
+      <div class="section"><h2>What testing fixed</h2><div class="panel">
+        ${e.fixes.map((x) => `<div class="ev-fix"><span class="what">${esc(x.what)}</span><span class="delta num"><s>${esc(x.before)}</s><em>${esc(x.after)}</em></span><small>${esc(x.measure)}</small></div>`).join("")}
       </div></div>`;
   },
 
@@ -334,6 +424,28 @@ function bindAgent() {
 }
 
 const BIND = {
+  evaluation() {
+    clearTimeout(evalPoll);
+    document.querySelectorAll("[data-store]").forEach((b) => (b.onclick = () => {
+      evalStore = b.dataset.store;
+      const c = evCashier(window._ev.cashier);
+      $("ev-cashier").innerHTML = c.body; $("ev-lift").innerHTML = c.lift;
+      document.querySelectorAll("[data-store]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.store === evalStore));
+    }));
+    const btn = $("ev-run");
+    const poll = () => { evalPoll = setTimeout(async () => {
+      if (tab !== "evaluation") return;
+      const r = await api("/api/evaluation").catch(() => ({ running: false }));
+      if (r.running) return poll();
+      toast(r.error ? r.error : "Checks finished"); render();
+    }, 3000); };
+    if (btn?.disabled) poll();
+    if (btn) btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = "Running the checks… about a minute";
+      try { await api("/api/evaluation/run", { method: "POST" }); poll(); }
+      catch (err) { toast(err.message, true); btn.disabled = false; btn.textContent = "Run the checks again"; }
+    };
+  },
   more() {
     document.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
   },
