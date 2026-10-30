@@ -19,3 +19,4 @@ dist/
 # Local data
 *.sqlite3
 .DS_Store
+*.db
