@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import auth, finance, mailer, stock
+from . import auth, finance, forecast, mailer, stock
 from .agents import cashier, invoice, stock_agent
 from .agents.llm import LLM
 from .config import Settings, get_settings
@@ -271,6 +271,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "categories": [{"category": c, "sales": round(v, 2)} for c, v in cats],
             "today_orders": [{"at": a.isoformat() + "Z", "total": t} for a, t in today_orders],
         }
+
+    # ---- forecast ------------------------------------------------------------------
+    @app.get("/api/forecast")
+    def get_forecast(db: Session = Depends(get_db), _=Depends(manager_only)):
+        return forecast.forecast(db, 7)
 
     # ---- expenses and profit ------------------------------------------------------
     @app.get("/api/expenses")

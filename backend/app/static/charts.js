@@ -69,7 +69,7 @@ const Charts = (() => {
     });
   }
   // line with a soft area, for change over time; crosshair and dot follow the pointer
-  function line(host, data, { color = css("--chart"), height = 200, labelEvery = 1, area = true } = {}) {
+  function line(host, data, { color = css("--chart"), height = 200, labelEvery = 1, area = true, dashFrom = null } = {}) {
     host.classList.add("chart"); host.innerHTML = "";
     const W = host.clientWidth || 320, H = height, L = 40, R = 8, B = 24, T = 10;
     const max = niceMax(Math.max(...data.map((d) => d.value)));
@@ -89,7 +89,13 @@ const Charts = (() => {
       const defs = el("defs"); defs.append(g); svg.append(defs);
       svg.append(el("path", { d: `${dLine}L${pts.at(-1)[0]},${H - B}L${L},${H - B}Z`, fill: `url(#${gid})` }));
     }
-    svg.append(el("path", { d: dLine, fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    const stroke = (d, dash) => el("path", { d, fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", ...(dash ? { "stroke-dasharray": "5 5" } : {}) });
+    if (dashFrom == null) svg.append(stroke(dLine));
+    else {
+      // solid for what happened, dashed for the forecast
+      const part = (a, b) => pts.slice(a, b).map((p, i) => `${i ? "L" : "M"}${p[0]},${p[1]}`).join("");
+      svg.append(stroke(part(0, dashFrom)), stroke(part(Math.max(0, dashFrom - 1)), true));
+    }
     data.forEach((d, i) => {
       if (i % labelEvery === 0) { const tx = el("text", { x: pts[i][0], y: H - 6, "text-anchor": "middle", class: "tick" }); tx.textContent = d.label; svg.append(tx); }
     });

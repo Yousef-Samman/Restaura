@@ -12,6 +12,7 @@ const TABS = [
 // sections reached from the More tab
 const MORE = [
   { id: "deliveries", label: "Deliveries", icon: "delivery", sub: "Invoice photos, manual deliveries, POS upload" },
+  { id: "forecast", label: "Forecast", icon: "sales", sub: "Next 7 days, tomorrow's prep, ingredients needed" },
   { id: "expenses", label: "Expenses", icon: "wallet", sub: "Costs and estimated profit" },
 ];
 const SECTION = (id) => [...TABS, ...MORE].find((t) => t.id === id);
@@ -50,7 +51,7 @@ function go(t) { tab = t; location.hash = t; render(); window.scrollTo(0, 0); }
 async function render() {
   if (!SECTION(tab)) tab = "today";
   $("title").textContent = SECTION(tab).label;
-  document.body.classList.toggle("has-hero", tab === "today");
+  document.body.classList.toggle("has-hero", ["today", "forecast"].includes(tab));
   renderTabs();
   const view = $("view");
   try { view.innerHTML = await VIEWS[tab](); BIND[tab]?.(); }
@@ -71,6 +72,31 @@ function agentCard(run) {
 const VIEWS = {
   async more() {
     return `<div class="section"><div class="panel">${MORE.map((m) => `<button class="more-row" data-go="${m.id}"><span class="ic">${ICONS[m.icon]}</span><span><b>${m.label}</b><br><span class="muted">${m.sub}</span></span>${ICONS.chevron}</button>`).join("")}</div></div>`;
+  },
+
+  async forecast() {
+    const f = await api("/api/forecast");
+    window._fc = f;
+    const wk = f.days.reduce((a, d) => a + d.sales, 0);
+    const day = (iso, o = { weekday: "short", day: "numeric", month: "short" }) => new Date(iso + "T00:00").toLocaleDateString("en-GB", o);
+    const short = f.ingredients.filter((i) => i.runs_out);
+    return `<div class="hero">
+        <div><div class="label">Next 7 days</div><div class="value num">${sar(wk)}</div></div>
+        <div><div class="label">Tomorrow</div><div class="value num">${sar(f.days[1].sales)}</div></div>
+        <div><div class="label">Tomorrow orders</div><div class="value num">${f.days[1].orders}</div></div>
+        <div><div class="label">Will run short</div><div class="value num" style="color:${short.length ? "var(--bad)" : "var(--ok)"}">${short.length}</div></div>
+      </div>
+      <div class="section"><div class="agent">
+        <div class="head">${ICONS.spark}Forecast</div>
+        <div class="headline" style="font-size:16px">${short.length ? `${short.length} ${short.length === 1 ? "ingredient" : "ingredients"} will run out this week at the expected sales: ${short.slice(0, 3).map((i) => `${esc(i.name)} (${day(i.runs_out, { weekday: "short" })})`).join(", ")}.` : "Stock covers the expected sales for the next 7 days."}</div>
+        <div class="meta">${esc(f.method)}</div>
+      </div></div>
+      <div class="section panel chart-card"><h3>Sales: last 14 days and next 7</h3><div class="sub">SAR · solid line is actual, dashed line is the forecast</div><div id="c-fc"></div>
+        <details class="table"><summary>Show as table</summary><table><tr><th>Day</th><th>Forecast</th><th>Range</th></tr>${f.days.map((d) => `<tr><td>${day(d.date)}</td><td class="num">${sar(d.sales)}</td><td class="num">${sar(d.low)}–${sar(d.high)}</td></tr>`).join("")}</table></details></div>
+      <div class="section panel chart-card"><h3>Tomorrow's prep</h3><div class="sub">Expected items sold, ${day(f.days[1].date, { weekday: "long" })}</div><div id="c-prep"></div></div>
+      <div class="section"><h2>Ingredients for the next 7 days</h2><div class="panel">
+        ${f.ingredients.map((i) => `<div class="list-item"><span>${esc(i.name)}<br><span class="muted">Need ${fmt(Math.ceil(i.need))} ${i.unit} · on hand ${fmt(i.on_hand)} ${i.unit}</span></span>${i.runs_out ? `<span class="chip negative">Runs out ${day(i.runs_out, { weekday: "short" })}</span>` : '<span class="chip received">Enough</span>'}</div>`).join("")}
+      </div></div>`;
   },
 
   async expenses() {
@@ -240,6 +266,15 @@ function bindAgent() {
 const BIND = {
   more() {
     document.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
+  },
+  forecast() {
+    const f = window._fc;
+    const d = (iso) => new Date(iso + "T00:00");
+    const tip = (iso, v, kind) => `${d(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}<br><b>${sar(v)}</b> ${kind}`;
+    const series = [...f.actual.map((a) => ({ value: a.sales, label: d(a.date).getDate(), tip: tip(a.date, a.sales, "actual") })),
+      ...f.days.map((x) => ({ value: x.sales, label: d(x.date).getDate(), tip: `${tip(x.date, x.sales, "forecast")}<br>range ${sar(x.low)}–${sar(x.high)}` }))];
+    Charts.line($("c-fc"), series, { labelEvery: 3, dashFrom: f.actual.length });
+    Charts.bars($("c-prep"), f.tomorrow_items.map((i) => ({ value: i.qty, label: i.name, tip: `${esc(i.name)}<br><b>${i.qty}</b> expected` })));
   },
   expenses() {
     const e = window._exp;

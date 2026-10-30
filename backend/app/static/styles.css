@@ -235,3 +235,4 @@ details.table td:last-child, details.table th:last-child { text-align: right; }
 .more-row > svg { width: 18px; margin-left: auto; color: var(--muted); }
 .more-row .muted { font-size: 13px; }
 .list-item b.num { white-space: nowrap; }
+.list-item .chip { white-space: nowrap; align-self: center; }
