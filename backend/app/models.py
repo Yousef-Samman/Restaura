@@ -176,3 +176,23 @@ class Expense(Base):
     category: Mapped[str] = mapped_column(String(40))
     amount: Mapped[float] = mapped_column(Float)  # SAR; for fixed, per month
     note: Mapped[str | None] = mapped_column(String(200))
+
+
+class RoutineTask(Base):
+    """One task on a daily checklist (opening, midday or closing)."""
+    __tablename__ = "routine_task"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    routine: Mapped[str] = mapped_column(String(10))  # opening | midday | closing
+    text: Mapped[str] = mapped_column(String(160))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class RoutineCheck(Base):
+    """A task ticked off on a given business day."""
+    __tablename__ = "routine_check"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    date: Mapped[dt.date] = mapped_column(Date)
+    task_id: Mapped[int] = mapped_column(ForeignKey("routine_task.id"))
+    done_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+    done_by: Mapped[str | None] = mapped_column(String(120))

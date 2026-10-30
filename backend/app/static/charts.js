@@ -142,5 +142,24 @@ const Charts = (() => {
     legend.innerHTML = data.map((d, i) => `<li><i style="background:${SLICES[i % SLICES.length]}"></i><span>${d.label}</span><b class="num">${Math.round((100 * d.value) / total)}%</b></li>`).join("");
     host.prepend(svg); host.append(legend);
   }
-  return { columns, bars, line, donut, fmt };
+  // heatmap: rows x columns of shares (0..1), one hue from light to dark, the value printed in each cell
+  function heatmap(host, rows, cols, value, { tipFor } = {}) {
+    host.classList.add("chart"); host.innerHTML = "";
+    const W = host.clientWidth || 320, labelW = 84, gap = 3, cw = (W - labelW) / cols.length, ch = 34, H = rows.length * ch + 20;
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img" });
+    const tip = tooltip(host), base = css("--brand");
+    rows.forEach((r, i) => {
+      const t = el("text", { x: 0, y: i * ch + ch / 2 + 4, class: "lbl" }); t.textContent = r.label; svg.append(t);
+      cols.forEach((c, j) => {
+        const v = value(r, c), x = labelW + j * cw, y = i * ch;
+        const cell = el("rect", { x: x + gap / 2, y: y + gap / 2, width: cw - gap, height: ch - gap, rx: 6, fill: v == null ? css("--line") : base, "fill-opacity": v == null ? 1 : 0.12 + 0.88 * v });
+        svg.append(cell);
+        if (v != null) { const tx = el("text", { x: x + cw / 2, y: y + ch / 2 + 4, "text-anchor": "middle", class: "hm", fill: v > 0.55 ? "#fff" : css("--ink") }); tx.textContent = `${Math.round(v * 100)}`; svg.append(tx); }
+        if (tipFor) { cell.addEventListener("pointerenter", () => tip.show(tipFor(r, c, v), x + cw / 2, y + 4)); cell.addEventListener("pointerleave", () => tip.hide()); }
+      });
+    });
+    cols.forEach((c, j) => { const t = el("text", { x: labelW + j * cw + cw / 2, y: H - 4, "text-anchor": "middle", class: "tick" }); t.textContent = c.label; svg.append(t); });
+    host.prepend(svg);
+  }
+  return { columns, bars, line, donut, heatmap, fmt };
 })();

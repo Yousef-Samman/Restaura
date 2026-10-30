@@ -9,12 +9,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import auth, finance, forecast, mailer, stock
+from . import auth, finance, forecast, mailer, routines, stock
 from .agents import cashier, invoice, overview, stock_agent
 from .agents.llm import LLM
 from .config import Settings, get_settings
 from .db import Base, make_engine, make_sessionmaker
-from .models import (AgentRun, Device, Expense, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
+from .models import (AgentRun, Device, Expense, RoutineTask, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
                      PurchaseOrderLine, RecipeLine, SuggestionEvent)
 from .seed import seed
 
@@ -47,6 +47,15 @@ class ExpenseIn(BaseModel):
     amount: float = Field(gt=0)
     note: str | None = Field(default=None, max_length=200)
     date: dt.date | None = None
+
+
+class TaskToggle(BaseModel):
+    done_by: str | None = Field(default=None, max_length=120)
+
+
+class TaskIn(BaseModel):
+    routine: str = Field(pattern="^(opening|midday|closing)$")
+    text: str = Field(min_length=1, max_length=160)
 
 
 class CountLine(BaseModel):
@@ -271,6 +280,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "categories": [{"category": c, "sales": round(v, 2)} for c, v in cats],
             "today_orders": [{"at": a.isoformat() + "Z", "total": t} for a, t in today_orders],
         }
+
+    # ---- routines (daily checklists) ---------------------------------------------------
+    @app.get("/api/routines")
+    def get_routines(db: Session = Depends(get_db), _=Depends(staff)):
+        return routines.today_view(db)
+
+    @app.post("/api/routines/tasks/{task_id}/toggle")
+    def toggle_task(task_id: int, body: TaskToggle, db: Session = Depends(get_db), user=Depends(staff)):
+        if not db.get(RoutineTask, task_id):
+            raise HTTPException(404, "Task not found")
+        done = routines.toggle(db, task_id, body.done_by or user.name)
+        db.commit()
+        return {"done": done}
+
+    @app.get("/api/routines/history")
+    def routine_history(days: int = 7, db: Session = Depends(get_db), _=Depends(manager_only)):
+        return routines.history(db, max(1, min(days, 30)))
+
+    @app.post("/api/routines/tasks")
+    def add_task(body: TaskIn, db: Session = Depends(get_db), _=Depends(manager_only)):
+        t = RoutineTask(routine=body.routine, text=body.text, position=99)
+        db.add(t)
+        db.commit()
+        return {"id": t.id}
+
+    @app.delete("/api/routines/tasks/{task_id}")
+    def remove_task(task_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
+        t = db.get(RoutineTask, task_id)
+        if not t:
+            raise HTTPException(404, "Task not found")
+        t.active = False
+        db.commit()
+        return {"removed": task_id}
 
     # ---- manager overview ------------------------------------------------------------
     @app.get("/api/overview")

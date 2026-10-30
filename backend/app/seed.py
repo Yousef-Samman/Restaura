@@ -5,7 +5,7 @@ import random
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Expense, Ingredient, MenuItem, Order, OrderLine, RecipeLine, StockMove, Supplier
+from .models import Expense, Ingredient, RoutineCheck, RoutineTask, MenuItem, Order, OrderLine, RecipeLine, StockMove, Supplier
 
 SUPPLIERS = [
     ("Fresh Produce Co.", "orders@fresh-produce.example", 1),
@@ -79,6 +79,7 @@ def seed(db: Session, history_days: int = 30) -> None:
     db.flush()
     _seed_history(db, items, history_days)
     _seed_expenses(db)
+    _seed_routines(db)
     db.commit()
 
 
@@ -113,3 +114,29 @@ def _seed_expenses(db: Session) -> None:
     today = dt.date.today()
     db.add_all(Expense(date=today.replace(day=1), kind="fixed", category=c, amount=a, note=n) for c, a, n in FIXED)
     db.add_all(Expense(date=today - dt.timedelta(days=d), kind="one_off", category=c, amount=a, note=n) for d, c, a, n in ONE_OFF)
+
+
+# sample checklists
+TASKS = {
+    "opening": ["Turn on the crepe and waffle machines", "Check fridge and freezer temperatures", "Prepare crepe and waffle batter",
+                "Fill the toppings station", "Count the cash float", "Clean tables and counter"],
+    "midday": ["Restock cups, lids and boxes", "Clean the toppings station", "Check batter and refill if needed", "Empty the bins"],
+    "closing": ["Clean the machines", "Store toppings in the fridge", "Count the cash and close the till", "Mop the floor",
+                "Turn off machines and lights"],
+}
+STAFF_NAMES = ["Sara", "Omar", "Lina", "Faisal", "Huda"]
+
+
+def _seed_routines(db: Session) -> None:
+    rng = random.Random(11)
+    tasks = [RoutineTask(routine=r, text=t, position=i) for r, ts in TASKS.items() for i, t in enumerate(ts)]
+    db.add_all(tasks)
+    db.flush()
+    today = dt.date.today()
+    for d in range(14, 0, -1):
+        day = today - dt.timedelta(days=d)
+        for t in tasks:
+            if rng.random() < (0.97 if t.routine == "opening" else 0.85 if t.routine == "midday" else 0.9):
+                hour = {"opening": 10, "midday": 16, "closing": 23}[t.routine]
+                db.add(RoutineCheck(date=day, task_id=t.id, done_by=rng.choice(STAFF_NAMES),
+                                    done_at=dt.datetime.combine(day, dt.time(hour, rng.randint(0, 29)))))

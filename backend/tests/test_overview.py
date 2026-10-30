@@ -1,7 +1,7 @@
 def test_overview_priorities_link_to_sections(client):
     o = client.get("/api/overview").json()
     assert o["priorities"]
-    assert {p["go"] for p in o["priorities"]} <= {"deliveries", "orders", "stock", "forecast", "expenses", None}
+    assert {p["go"] for p in o["priorities"]} <= {"deliveries", "orders", "stock", "forecast", "expenses", "routines", "staff", None}
     assert o["facts"]["forecast_tomorrow"] > 0
 
 

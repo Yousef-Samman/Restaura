@@ -14,6 +14,7 @@ const MORE = [
   { id: "deliveries", label: "Deliveries", icon: "delivery", sub: "Invoice photos, manual deliveries, POS upload" },
   { id: "forecast", label: "Forecast", icon: "sales", sub: "Next 7 days, tomorrow's prep, ingredients needed" },
   { id: "expenses", label: "Expenses", icon: "wallet", sub: "Costs and estimated profit" },
+  { id: "routines", label: "Routines", icon: "check", sub: "Opening, mid-shift and closing checklists" },
 ];
 const SECTION = (id) => [...TABS, ...MORE].find((t) => t.id === id);
 let expDays = 30;
@@ -72,6 +73,21 @@ function agentCard(run) {
 const VIEWS = {
   async more() {
     return `<div class="section"><div class="panel">${MORE.map((m) => `<button class="more-row" data-go="${m.id}"><span class="ic">${ICONS[m.icon]}</span><span><b>${m.label}</b><br><span class="muted">${m.sub}</span></span>${ICONS.chevron}</button>`).join("")}</div></div>`;
+  },
+
+  async routines() {
+    const [r, h] = await Promise.all([api("/api/routines"), api("/api/routines/history?days=7")]);
+    window._rt = h;
+    return r.map((x) => `<div class="section"><h2>${x.label} · due ${x.due}</h2><div class="panel">
+        <div class="rt-head"><div class="meter"><i style="width:${x.total ? (100 * x.done) / x.total : 0}%"></i></div><b class="num">${x.done}/${x.total}</b>${x.overdue ? '<span class="chip negative">Late</span>' : x.done === x.total ? '<span class="chip received">Done</span>' : ""}</div>
+        ${x.tasks.map((t) => `<div class="task ${t.done ? "done" : ""}"><button class="tick" data-task="${t.id}" aria-pressed="${t.done}" aria-label="${esc(t.text)}">${ICONS.check}</button><span>${esc(t.text)}${t.done ? `<br><span class="muted">${esc(t.done_by || "")} · ${t.done_at}</span>` : ""}</span><button class="x" data-rmtask="${t.id}" aria-label="Remove task">×</button></div>`).join("")}
+      </div></div>`).join("") + `
+      <div class="section panel chart-card"><h3>Last 7 days</h3><div class="sub">% of each checklist done</div><div id="c-rt"></div></div>
+      <div class="section"><h2>Add a task</h2><div class="panel form">
+        <label class="field">Checklist<select id="t-r"><option value="opening">Opening</option><option value="midday">Mid-shift</option><option value="closing">Closing</option></select></label>
+        <label class="field">Task<input id="t-text" type="text" maxlength="160"></label>
+        <button class="solid" id="t-save">Add task</button>
+      </div></div>`;
   },
 
   async forecast() {
@@ -281,6 +297,20 @@ function bindAgent() {
 const BIND = {
   more() {
     document.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
+  },
+  routines() {
+    const h = window._rt, d = (iso) => new Date(iso + "T00:00");
+    const rows = [{ key: "opening", label: "Opening" }, { key: "midday", label: "Mid-shift" }, { key: "closing", label: "Closing" }];
+    Charts.heatmap($("c-rt"), rows, h.map((x) => ({ ...x, label: d(x.date).toLocaleDateString("en-GB", { weekday: "narrow" }) + d(x.date).getDate() })), (r, c) => c[r.key],
+      { tipFor: (r, c, v) => `${r.label} · ${d(c.date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}<br><b>${Math.round(v * 100)}%</b> done` });
+    document.querySelectorAll("[data-task]").forEach((b) => (b.onclick = async () => { await api(`/api/routines/tasks/${b.dataset.task}/toggle`, { method: "POST", body: "{}" }); render(); }));
+    document.querySelectorAll("[data-rmtask]").forEach((b) => (b.onclick = async () => { await api(`/api/routines/tasks/${b.dataset.rmtask}`, { method: "DELETE" }); toast("Task removed"); render(); }));
+    $("t-save").onclick = async () => {
+      const text = $("t-text").value.trim();
+      if (!text) return toast("Write the task", true);
+      await api("/api/routines/tasks", { method: "POST", body: JSON.stringify({ routine: $("t-r").value, text }) });
+      toast("Task added"); render();
+    };
   },
   forecast() {
     const f = window._fc;

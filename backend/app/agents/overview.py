@@ -6,7 +6,7 @@ import json
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import finance, forecast, stock
+from .. import finance, forecast, routines, stock
 from ..models import AgentRun, Order, PurchaseOrder
 from .llm import LLM
 
@@ -37,6 +37,7 @@ def facts(db: Session) -> dict:
         "food_cost_share_7d": round(fin["food_cost"] / fin["sales"], 3) if fin["sales"] else None,
         "drafts_waiting": [{"supplier": po.supplier.name, "lines": len(po.lines)} for po in drafts],
         "orders_on_the_way": sent,
+        "routines_overdue": [{"routine": r["label"], "due": r["due"], "missing": r["total"] - r["done"]} for r in routines.today_view(db) if r["overdue"]],
         "negative_stock": [r["name"] for r in report if r["status"] == "negative"],
         "below_minimum": [r["name"] for r in report if r["status"] == "low"],
         "runs_out_this_week_no_order": [{"name": i["name"], "date": i["runs_out"]} for i in fc["ingredients"]
@@ -52,6 +53,8 @@ def priorities(f: dict) -> list[dict]:
     if f["drafts_waiting"]:
         n = len(f["drafts_waiting"])
         out.append({"level": "warn", "text": f"{n} supplier {'order is' if n == 1 else 'orders are'} waiting for your approval.", "go": "orders"})
+    for r in f["routines_overdue"]:
+        out.append({"level": "warn", "text": f"{r['routine']} checklist is late: {r['missing']} {'task' if r['missing'] == 1 else 'tasks'} not done (due {r['due']}).", "go": "routines"})
     if f["below_minimum"]:
         out.append({"level": "warn", "text": f"{len(f['below_minimum'])} ingredients are at or below their minimum.", "go": "stock"})
     soon = [i for i in f["runs_out_this_week_no_order"] if i["name"] not in f["below_minimum"]]

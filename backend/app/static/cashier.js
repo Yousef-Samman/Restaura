@@ -128,6 +128,21 @@ async function charge() {
   } catch (e) { toast(e.message, true); renderCart(); }
 }
 
+// daily checklists: staff tick tasks here; the manager sees them in Routines
+async function loadTasks(open = false) {
+  const r = await api("/api/routines");
+  const late = r.filter((x) => x.overdue).length;
+  $("tasks-btn").innerHTML = `${ICONS.list}Tasks${late ? `<span class="dot">${late}</span>` : ""}`;
+  if (!open && $("sheet").hidden) return;
+  $("sheet").hidden = false;
+  $("sheet-body").innerHTML = r.map((x) => `<section><h3>${x.label} <span class="muted">due ${x.due} · ${x.done}/${x.total}</span>${x.overdue ? ' <span class="chip negative">Late</span>' : ""}</h3>
+    ${x.tasks.map((t) => `<button class="task ${t.done ? "done" : ""}" data-task="${t.id}"><span class="tick">${ICONS.check}</span><span>${esc(t.text)}${t.done ? `<br><span class="muted">${esc(t.done_by || "")} · ${t.done_at}</span>` : ""}</span></button>`).join("")}</section>`).join("");
+  $("sheet-body").querySelectorAll("[data-task]").forEach((b) => (b.onclick = async () => {
+    await api(`/api/routines/tasks/${b.dataset.task}/toggle`, { method: "POST", body: "{}" });
+    loadTasks(true);
+  }));
+}
+
 async function init() {
   $("search-icon").innerHTML = ICONS.search;
   $("spark").innerHTML = ICONS.spark;
@@ -145,6 +160,9 @@ async function init() {
   loadToday();
   $("search").oninput = (e) => { state.q = e.target.value.trim().toLowerCase(); render(); };
   $("charge").onclick = charge;
+  $("tasks-btn").onclick = () => loadTasks(true);
+  $("sheet-close").onclick = () => { $("sheet").hidden = true; };
+  loadTasks();
   $("clear").onclick = () => { state.cart = []; renderCart(); refreshSuggestions(); };
 }
 init().catch((e) => toast(e.message, true));
