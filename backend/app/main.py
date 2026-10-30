@@ -13,13 +13,13 @@ from sqlalchemy.orm import Session, object_session, selectinload
 from . import auth, evaluation, finance, forecast, mailer, routines, sales_report, staff as staffing, stock
 from . import nightly
 from .email_template import HEADER_CID, order_email_html
-from .agents import cashier, invoice, overview, stock_agent
+from .agents import cashier, invoice, overview, staff_agent, stock_agent
 from .agents.stock_agent import split_change
 from .agents.llm import LLM
 from .config import Settings, get_settings
 from .db import Base, make_engine, make_sessionmaker
 from .models import (AgentRun, Device, Expense, RoutineTask, Shift, StaffMember, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
-                     PurchaseOrderLine, RecipeLine, StockMove, SuggestionEvent)
+                     PurchaseOrderLine, RecipeLine, StaffReview, StaffTip, StockMove, Supplier, SuggestionEvent)
 from .seed import STORE_UTC_OFFSET, seed
 
 STATIC = Path(__file__).parent / "static"
@@ -33,6 +33,27 @@ class CartLine(BaseModel):
 
 class Cart(BaseModel):
     lines: list[CartLine]
+    # how the sale went, for the staff coach: seconds from the first item to payment, items taken off, how they paid
+    seconds_to_pay: int | None = Field(None, ge=0, le=3600)
+    removed_items: int = Field(0, ge=0, le=100)
+    payment: str | None = Field(None, pattern="^(card|cash|split)$")
+
+
+class SupplierIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    channel: str = Field("email", pattern="^(email|whatsapp)$")
+    email: str | None = Field(None, max_length=200, pattern=r"^$|^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    phone: str | None = Field(None, max_length=20)
+    lead_days: int = Field(1, ge=0, le=30)
+    ingredient_ids: list[int] = []
+
+
+class ReviewIn(BaseModel):
+    quality: int = Field(ge=1, le=5)
+    speed: int = Field(ge=1, le=5)
+    cleanliness: int = Field(ge=1, le=5)
+    teamwork: int = Field(ge=1, le=5)
+    note: str | None = Field(None, max_length=200)
 
 
 class ReceiveLine(BaseModel):
@@ -138,6 +159,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     staff = require("cashier", "manager")
     manager_only = require("manager")
+
+    def staff_id(user) -> int | None:
+        """The staff member behind a cashier account (staff accounts are named staff-<id>)."""
+        name = user.username or ""
+        return int(name[6:]) if name.startswith("staff-") and name[6:].isdigit() else None
     cookie = dict(httponly=True, samesite="lax", secure=settings.secure_cookies)
 
     # ---- accounts and devices --------------------------------------------------
@@ -252,11 +278,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                       for po in db.scalars(select(PurchaseOrder).where(PurchaseOrder.status == "draft")))}
 
     @app.post("/api/cashier/suggest")
-    def suggest(cart: Cart, db: Session = Depends(get_db), _=Depends(staff)):
-        return cashier.suggest(db, llm, load_cart(db, cart.lines))
+    def suggest(cart: Cart, db: Session = Depends(get_db), user=Depends(staff)):
+        return cashier.suggest(db, llm, load_cart(db, cart.lines), staff_id=staff_id(user))
 
     @app.post("/api/orders")
-    def place_order(cart: Cart, db: Session = Depends(get_db), _=Depends(staff)):
+    def place_order(cart: Cart, db: Session = Depends(get_db), user=Depends(staff)):
         if not cart.lines:
             raise HTTPException(400, "Order is empty")
         items = load_cart(db, cart.lines)
@@ -267,7 +293,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         short = [db.get(Ingredient, i).name for i, q in use.items() if db.get(Ingredient, i).on_hand < q]
         if short:
             raise HTTPException(409, f"Not enough stock for this order: {', '.join(short)}")
-        order = Order(business_date=dt.date.today(), source="cashier", total=sum(i.price * q for i, q in items))
+        order = Order(business_date=dt.date.today(), source="cashier", total=sum(i.price * q for i, q in items),
+                      staff_id=staff_id(user), seconds_to_pay=cart.seconds_to_pay, removed_items=cart.removed_items,
+                      payment=cart.payment)
         order.lines = [OrderLine(menu_item_id=i.id, qty=q, price=i.price, from_suggestion=l.suggestion_event_id is not None)
                        for (i, q), l in zip(items, cart.lines)]
         db.add(order)
@@ -351,6 +379,67 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/staff/week")
     def staff_week(db: Session = Depends(get_db), _=Depends(manager_only)):
         return staffing.week(db)
+
+    # ---- the staff coach: weekly measures, the manager's weekly review and one tip per person ----------
+    @app.get("/api/staff/coach")
+    def staff_coach(db: Session = Depends(get_db), _=Depends(manager_only)):
+        last = db.scalar(select(AgentRun).where(AgentRun.agent == "staff").order_by(AgentRun.id.desc()))
+        return staff_agent.overview(db) | {
+            "last_run": {"at": last.created_at.isoformat() + "Z", "source": last.source,
+                         "headline": json.loads(last.summary)["headline"]} if last else None}
+
+    @app.get("/api/staff/{member_id}/coach")
+    def staff_coach_person(member_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
+        p = next((p for p in staff_agent.overview(db)["people"] if p["id"] == member_id), None)
+        if not p:
+            raise HTTPException(404, "Staff member not found")
+        tips = db.scalars(select(StaffTip).where(StaffTip.staff_id == member_id).order_by(StaffTip.id.desc()).limit(6))
+        reviews = db.scalars(select(StaffReview).where(StaffReview.staff_id == member_id)
+                             .order_by(StaffReview.week_start.desc()).limit(6))
+        return p | {
+            "tips": [{"tip": t.tip, "why": t.why, "label": staff_agent.FOCUS[t.focus][0], "at": t.created_at.isoformat() + "Z",
+                      "seen": t.seen_at is not None, "result": staff_agent.tip_result(db, t)} for t in tips],
+            "reviews": [{"week_start": r.week_start.isoformat(), "quality": r.quality, "speed": r.speed,
+                         "cleanliness": r.cleanliness, "teamwork": r.teamwork, "note": r.note} for r in reviews]}
+
+    @app.post("/api/staff/{member_id}/review")
+    def save_review(member_id: int, body: ReviewIn, db: Session = Depends(get_db), _=Depends(manager_only)):
+        """The manager's review for this week. Saving again in the same week replaces it."""
+        if not db.get(StaffMember, member_id):
+            raise HTTPException(404, "Staff member not found")
+        week = staff_agent.week_start(routines.local_now().date())
+        r = db.scalar(select(StaffReview).where(StaffReview.staff_id == member_id, StaffReview.week_start == week))
+        if not r:
+            r = StaffReview(staff_id=member_id, week_start=week)
+            db.add(r)
+        r.quality, r.speed, r.cleanliness, r.teamwork = body.quality, body.speed, body.cleanliness, body.teamwork
+        r.note = (body.note or "").strip() or None
+        db.commit()
+        return {"saved": True, "week_start": week.isoformat()}
+
+    @app.post("/api/agents/staff/run")
+    def run_staff_agent(db: Session = Depends(get_db), _=Depends(manager_only)):
+        return staff_agent.run(db, llm)
+
+    @app.get("/api/me/tip")
+    def my_tip(db: Session = Depends(get_db), user=Depends(staff)):
+        """The latest tip for the signed-in staff member, shown once after the PIN until they tap Got it."""
+        sid = staff_id(user)
+        t = sid and db.scalar(select(StaffTip).where(StaffTip.staff_id == sid).order_by(StaffTip.id.desc()))
+        if not t or t.seen_at:
+            return {"tip": None}
+        prev = db.scalar(select(StaffTip).where(StaffTip.staff_id == sid, StaffTip.id < t.id).order_by(StaffTip.id.desc()))
+        return {"tip": {"id": t.id, "tip": t.tip, "why": t.why, "label": staff_agent.FOCUS[t.focus][0]},
+                "previous": {"label": staff_agent.FOCUS[prev.focus][0], "result": staff_agent.tip_result(db, prev)} if prev else None}
+
+    @app.post("/api/me/tip/{tip_id}/seen")
+    def tip_seen(tip_id: int, db: Session = Depends(get_db), user=Depends(staff)):
+        t = db.get(StaffTip, tip_id)
+        if not t or t.staff_id != staff_id(user):
+            raise HTTPException(404, "Tip not found")
+        t.seen_at = dt.datetime.now(dt.UTC).replace(tzinfo=None)
+        db.commit()
+        return {"ok": True}
 
     @app.post("/api/staff")
     def add_staff(body: StaffIn, db: Session = Depends(get_db), _=Depends(manager_only)):
@@ -462,6 +551,72 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         runs = db.scalars(select(AgentRun).order_by(AgentRun.id.desc()).limit(20))
         return [{"id": r.id, "at": r.created_at.isoformat(), "agent": r.agent, "source": r.source,
                  **json.loads(r.summary)} for r in runs]
+
+    # ---- suppliers ------------------------------------------------------------------
+    def supplier_dict(sup: Supplier) -> dict:
+        db_ings = object_session(sup).scalars(select(Ingredient).where(Ingredient.supplier_id == sup.id).order_by(Ingredient.name))
+        return {"id": sup.id, "name": sup.name, "channel": sup.channel, "email": sup.email, "phone": sup.phone,
+                "lead_days": sup.lead_days, "ingredients": [{"id": i.id, "name": i.name} for i in db_ings]}
+
+    @app.get("/api/suppliers")
+    def suppliers(db: Session = Depends(get_db), _=Depends(manager_only)):
+        return {"suppliers": [supplier_dict(x) for x in db.scalars(select(Supplier).where(Supplier.active).order_by(Supplier.name))],
+                "ingredients": [{"id": i.id, "name": i.name, "supplier_id": i.supplier_id}
+                                for i in db.scalars(select(Ingredient).order_by(Ingredient.name))]}
+
+    def save_supplier(db: Session, sup: Supplier, body: SupplierIn) -> dict:
+        email = (body.email or "").strip() or None
+        phone = "".join(ch for ch in (body.phone or "") if ch.isdigit()) or None
+        if body.channel == "email" and not email:
+            raise HTTPException(400, "Add the email address orders go to")
+        if body.channel == "whatsapp" and not phone:
+            raise HTTPException(400, "Add the WhatsApp number orders go to")
+        clash = db.scalar(select(Supplier).where(func.lower(Supplier.name) == body.name.strip().lower(), Supplier.id != (sup.id or 0), Supplier.active))
+        if clash:
+            raise HTTPException(409, "A supplier with this name already exists")
+        sup.name, sup.channel, sup.email, sup.phone, sup.lead_days = body.name.strip(), body.channel, email, phone, body.lead_days
+        if not sup.id:
+            db.add(sup)
+            db.flush()
+        mine = set(body.ingredient_ids)
+        for ing in db.scalars(select(Ingredient)):
+            if ing.id in mine:
+                ing.supplier_id = sup.id  # each ingredient has one supplier: ticking it here moves it
+            elif ing.supplier_id == sup.id:
+                raise HTTPException(400, f"{ing.name} needs a supplier. Tick it on another supplier to move it there.")
+        db.commit()
+        return supplier_dict(sup)
+
+    @app.post("/api/suppliers")
+    def add_supplier(body: SupplierIn, db: Session = Depends(get_db), _=Depends(manager_only)):
+        return save_supplier(db, Supplier(), body)
+
+    @app.put("/api/suppliers/{supplier_id}")
+    def edit_supplier(supplier_id: int, body: SupplierIn, db: Session = Depends(get_db), _=Depends(manager_only)):
+        sup = db.get(Supplier, supplier_id)
+        if not sup:
+            raise HTTPException(404, "Supplier not found")
+        return save_supplier(db, sup, body)
+
+    @app.delete("/api/suppliers/{supplier_id}")
+    def remove_supplier(supplier_id: int, db: Session = Depends(get_db), _=Depends(manager_only)):
+        sup = db.get(Supplier, supplier_id)
+        if not sup:
+            raise HTTPException(404, "Supplier not found")
+        if db.scalar(select(func.count(PurchaseOrder.id)).where(PurchaseOrder.supplier_id == sup.id, PurchaseOrder.status == "sent")):
+            raise HTTPException(409, "An order from this supplier is on the way. Receive it first.")
+        if db.scalar(select(func.count(Ingredient.id)).where(Ingredient.supplier_id == sup.id)):
+            raise HTTPException(409, "Move this supplier's ingredients to another supplier first.")
+        for po in db.scalars(select(PurchaseOrder).where(PurchaseOrder.supplier_id == sup.id, PurchaseOrder.status == "draft")):
+            po.status = "rejected"
+        # past orders keep pointing at the supplier, so one with history is hidden instead of deleted
+        if db.scalar(select(func.count(PurchaseOrder.id)).where(PurchaseOrder.supplier_id == sup.id)):
+            sup.active = False
+            sup.name = f"{sup.name} (removed {sup.id})"  # frees the name for a new supplier
+        else:
+            db.delete(sup)
+        db.commit()
+        return {"removed": supplier_id}
 
     # ---- purchase orders -------------------------------------------------------
     def order_text(po: PurchaseOrder) -> str:

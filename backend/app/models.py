@@ -18,6 +18,7 @@ class Supplier(Base):
     lead_days: Mapped[int] = mapped_column(Integer, default=1)
     channel: Mapped[str] = mapped_column(String(10), default="email")  # email | whatsapp
     phone: Mapped[str | None] = mapped_column(String(20))  # international format, digits only
+    active: Mapped[bool] = mapped_column(Boolean, default=True)  # removed suppliers with past orders are kept for the records
 
 
 class Ingredient(Base):
@@ -59,6 +60,11 @@ class Order(Base):
     business_date: Mapped[dt.date] = mapped_column(Date)
     source: Mapped[str] = mapped_column(String(20))  # cashier | import | history
     total: Mapped[float] = mapped_column(Float, default=0)
+    # who served it and how the bill went, for the Staff agent's coaching
+    staff_id: Mapped[int | None] = mapped_column(ForeignKey("staff_member.id"))
+    seconds_to_pay: Mapped[int | None] = mapped_column(Integer)  # first item tapped to paid
+    removed_items: Mapped[int] = mapped_column(Integer, default=0)  # items taken off the bill before paying
+    payment: Mapped[str | None] = mapped_column(String(10))  # card | cash | split
     lines: Mapped[list["OrderLine"]] = relationship(cascade="all, delete-orphan")
 
 
@@ -82,6 +88,7 @@ class SuggestionEvent(Base):
     source: Mapped[str] = mapped_column(String(10))  # ai | rules
     accepted: Mapped[bool] = mapped_column(Boolean, default=False)
     order_id: Mapped[int | None] = mapped_column(ForeignKey("sale_order.id"))
+    staff_id: Mapped[int | None] = mapped_column(ForeignKey("staff_member.id"))  # who offered it
 
 
 class StockMove(Base):
@@ -229,4 +236,34 @@ class Attendance(Base):
     date: Mapped[dt.date] = mapped_column(Date)
     clock_in: Mapped[dt.datetime] = mapped_column(DateTime)
     clock_out: Mapped[dt.datetime | None] = mapped_column(DateTime)
+    staff: Mapped[StaffMember] = relationship()
+
+
+class StaffReview(Base):
+    """The manager's weekly review of one staff member: four 1-5 ratings and a note."""
+    __tablename__ = "staff_review"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    staff_id: Mapped[int] = mapped_column(ForeignKey("staff_member.id"))
+    week_start: Mapped[dt.date] = mapped_column(Date)  # the Sunday the work week starts
+    quality: Mapped[int] = mapped_column(Integer)
+    speed: Mapped[int] = mapped_column(Integer)
+    cleanliness: Mapped[int] = mapped_column(Integer)
+    teamwork: Mapped[int] = mapped_column(Integer)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+
+
+class StaffTip(Base):
+    """One coaching tip the Staff agent gave a staff member, with the number it should move, so the next check can
+    tell whether it worked."""
+    __tablename__ = "staff_tip"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    staff_id: Mapped[int] = mapped_column(ForeignKey("staff_member.id"))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+    tip: Mapped[str] = mapped_column(Text)
+    why: Mapped[str] = mapped_column(Text)
+    focus: Mapped[str] = mapped_column(String(40))  # the measure it targets, see agents/staff_agent.FOCUS
+    baseline: Mapped[float | None] = mapped_column(Float)
+    source: Mapped[str] = mapped_column(String(10), default="rules")  # ai | rules
+    seen_at: Mapped[dt.datetime | None] = mapped_column(DateTime)  # when the staff member tapped Got it
     staff: Mapped[StaffMember] = relationship()

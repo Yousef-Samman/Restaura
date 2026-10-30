@@ -130,7 +130,7 @@ def _distinct(cands: list[dict], n: int = 2) -> list[dict]:
     return out
 
 
-def suggest(db: Session, llm: LLM, cart: list[tuple[MenuItem, int]]) -> dict:
+def suggest(db: Session, llm: LLM, cart: list[tuple[MenuItem, int]], staff_id: int | None = None) -> dict:
     if not cart:
         return {"source": "rules", "suggestions": []}
     cands = candidates(db, cart)
@@ -159,7 +159,7 @@ def suggest(db: Session, llm: LLM, cart: list[tuple[MenuItem, int]]) -> dict:
     result = []
     for p in picks:
         item = by_id[p["item_id"]]["item"]
-        ev = SuggestionEvent(menu_item_id=item.id, source=source)
+        ev = SuggestionEvent(menu_item_id=item.id, source=source, staff_id=staff_id)
         db.add(ev)
         db.flush()
         result.append({"event_id": ev.id, "item_id": item.id, "name": item.name, "price": item.price,
