@@ -27,3 +27,9 @@ def test_off_when_not_a_demo(tmp_path):
     with TestClient(demo_app(tmp_path, False)) as c:
         assert c.get("/api/auth/demo").json() == {"enabled": False}
         assert c.post("/api/auth/demo/manager").status_code == 404
+
+
+def test_staff_agent_text_shows_percentages_not_decimals():
+    from app.agents.staff_agent import percent_words
+    assert percent_words("offers from 0.118 to 0.254") == "offers from 12% to 25%"
+    assert percent_words("rated 4.2/5, 10 orders, 0.5/5") == "rated 4.2/5, 10 orders, 0.5/5"
