@@ -237,6 +237,32 @@ function scorecardHtml(c) {
   </div></div>`;
 }
 
+// records that don't fit, held out of learning until you say if they are right; code found them, Claude or the rules explain
+const VERDICT = { mistake: ["Looks like a mistake", "draft"], real: ["Looks real", "received"], unsure: ["Please check", ""] };
+function dataChecksHtml(list, kinds) {
+  const rows = list.filter((f) => kinds.includes(f.kind));
+  if (!rows.length) return "";
+  return `<div class="section"><h2>Check before the agents learn</h2>
+    ${rows.map((f) => {
+      const [label, cls] = VERDICT[f.verdict];
+      const keep = f.kind === "sales_day" && f.label ? `Right, tag it ${esc(f.label)}` : "It's right";
+      const main = f.verdict === "mistake" ? `<button class="brass" data-dc="${f.id}" data-ok="0">It's a mistake, leave it out</button><button class="reject" data-dc="${f.id}" data-ok="1">It's right</button>`
+        : `<button class="brass" data-dc="${f.id}" data-ok="1" data-label="${esc(f.label || "")}">${keep}</button><button class="reject" data-dc="${f.id}" data-ok="0">It's a mistake</button>`;
+      return `<div class="tipcard lesson dc"><div class="k">${ICONS.spark} ${f.source === "ai" ? "Checked by Claude" : "Checked by the rules"} <span class="chip ${cls}">${label}</span></div>
+        <p>${esc(f.title)}</p><div class="cmp">${esc(f.why)}</div><div class="row">${main}</div></div>`;
+    }).join("")}
+    <div class="muted" style="font-size:13px;margin-top:8px">The agents don't learn from these until you decide. Nothing is deleted: a mistake is only left out of learning.</div></div>`;
+}
+function bindDataChecks() {
+  document.querySelectorAll("[data-dc]").forEach((b) => (b.onclick = async () => {
+    const correct = b.dataset.ok === "1";
+    try {
+      await api(`/api/data-checks/${b.dataset.dc}`, { method: "POST", body: JSON.stringify({ correct, label: correct ? b.dataset.label || null : null }) });
+      toast(correct ? "Kept. The agents learn from it." : "Left out of learning"); render();
+    } catch (e) { toast(e.message, true); }
+  }));
+}
+
 // what the stock agent learned from your edits, deliveries and counts: suggestions you apply or not
 function learnedStock(l) {
   if (!l.waiting.length && !l.applied.length) return "";
@@ -433,6 +459,7 @@ const VIEWS = {
   },
 
   async forecast() {
+    const checks = await api("/api/data-checks");
     const f = await api("/api/forecast");
     window._fc = f;
     const wk = f.days.reduce((a, d) => a + d.sales, 0);
@@ -451,6 +478,7 @@ const VIEWS = {
       </div></div>
       <div class="section panel chart-card"><h3>Sales: last 14 days and next 7</h3><div class="sub">SAR · solid line is actual, dashed line is the forecast</div><div id="c-fc"></div>
         <details class="table"><summary>Show as table</summary><table><tr><th>Day</th><th>Forecast</th><th>Range</th></tr>${f.days.map((d) => `<tr><td>${day(d.date)}${d.special ? ` · ${esc(d.special.label)}` : ""}</td><td class="num">${sar(d.sales)}</td><td class="num">${sar(d.low)}–${sar(d.high)}</td></tr>`).join("")}</table></details></div>
+      ${dataChecksHtml(checks.waiting, ["sales_day"])}
       ${specialDaysHtml(f)}
       ${scorecardHtml(f.scorecard)}
       <div class="section panel chart-card"><h3>Tomorrow's prep</h3><div class="sub">Expected items sold, ${day(f.days[1].date, { weekday: "long" })}</div><div id="c-prep"></div></div>
@@ -718,6 +746,7 @@ const VIEWS = {
   },
 
   async stock() {
+    const checks = await api("/api/data-checks");  // first, so anything held is left out of what was learned
     const [rows, runs, learned] = await Promise.all([api("/api/stock"), api("/api/agents/runs"), api("/api/lessons")]);
     window._stk = rows;
     const run = runs.find((r) => r.agent === "stock");
@@ -726,6 +755,7 @@ const VIEWS = {
     return `<div class="section first"><div class="panel strip"><span class="badge sm">${ICONS.stockAgent}</span>
         <div><b>Stock agent</b><small>${run ? `Last check ${timeOf(run.at)} · ${byWhom(run)}` : "No check yet today"}</small></div>
         <button class="secondary-btn" id="run-agent">Run check</button></div></div>
+      ${dataChecksHtml(checks.waiting, ["count", "edit", "delivery"])}
       ${learnedStock(learned)}
       <div class="section stk-tools">
         <div class="stk-filters" role="group" aria-label="Show">${Object.entries(STOCK_FILTERS).map(([k, f]) => `<button data-sf="${k}" aria-pressed="${k === stockFilter}" class="${k}">${f.label}<b class="num">${n(k)}</b></button>`).join("")}</div>
@@ -962,6 +992,7 @@ const BIND = {
   },
   forecast() {
     const f = window._fc;
+    bindDataChecks();
     $("sd-save").onclick = async () => {
       const date = $("sd-date").value, label = $("sd-label").value.trim();
       if (!date || !label) return toast("Pick the day and say what it is", true);
@@ -970,7 +1001,7 @@ const BIND = {
     document.querySelectorAll("[data-rmday]").forEach((b) => (b.onclick = async () => { await api(`/api/special-days/${b.dataset.rmday}`, { method: "DELETE" }); toast("Tag removed"); render(); }));
     const d = (iso) => new Date(iso + "T00:00");
     const tip = (iso, v, kind) => `${d(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}<br><b>${sar(v)}</b> ${kind}`;
-    const series = [...f.actual.map((a) => ({ value: a.sales, label: d(a.date).getDate(), tip: tip(a.date, a.sales, "actual") })),
+    const series = [...f.actual.map((a) => ({ value: a.sales, label: d(a.date).getDate(), tip: tip(a.date, a.sales, "actual") + (a.held ? "<br>left out of learning until you check it" : "") })),
       ...f.days.map((x) => ({ value: x.sales, label: d(x.date).getDate(), tip: `${tip(x.date, x.sales, "forecast")}<br>range ${sar(x.low)}–${sar(x.high)}` }))];
     Charts.line($("c-fc"), series, { labelEvery: 3, dashFrom: f.actual.length });
     Charts.bars($("c-prep"), f.tomorrow_items.map((i) => ({ value: i.qty, label: i.name, tip: `${esc(i.name)}<br><b>${i.qty}</b> expected` })));
@@ -1013,6 +1044,7 @@ const BIND = {
   },
   stock() {
     bindAgent();
+    bindDataChecks();
     document.querySelectorAll("[data-apply]").forEach((b) => (b.onclick = async () => {
       try { await api(`/api/lessons/${b.dataset.apply}/apply`, { method: "POST" }); toast("Applied. Future orders use it."); render(); } catch (e) { toast(e.message, true); }
     }));

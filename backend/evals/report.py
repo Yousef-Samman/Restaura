@@ -90,6 +90,31 @@ def markdown(r: dict) -> str:
                   "editing habits and suppliers slower than their setting; a manager applies a suggestion within 10% of their habit.",
                   "Tried and rejected for the forecast (worse on both the synthetic and the real U Walk sales, see section 2): switching "
                   "each day to the method closest lately, and correcting a steady lean.", ""]
+    if "data_check" in r:
+        dc = r["data_check"]
+        c, sa, v = dc["counts"], dc["sales"], dc["verdicts"]
+        co, cn = c["results"]["off"], c["results"]["on"]
+        lines += ["## 3c. Checking the data before learning", "",
+                  "Mistakes are put into the data on purpose, and each agent learns twice from the same data: without the check, and "
+                  "with it (records that don't fit are held out, and the manager's decision is the truth).", "",
+                  _table(["Agent", "Test", "No check", "With the check"], [
+                      ["Stock", f"Stores where the agent found the real waste ({c['stores']} stores, {c['slips']} counts typed with a missing zero)", co["right"], cn["right"]],
+                      ["Stock", "Stores with waste where it learned nothing", co["missed"], cn["missed"]],
+                      ["Stock", "Wrong waste suggestions", co["wrong"], cn["wrong"]],
+                      ["Forecast", f"Error on normal days ({sa['mistakes']} days imported twice or partly; {sa['mistakes_caught']} caught)",
+                       _pct(sa["error"]["no check"]), _pct(sa["error"]["after the manager decides"])]]),
+                  "",
+                  f"The check also flagged {sa['real_flagged']} real days (holidays, promotions) and {sa['normal_flagged']} normal days. "
+                  f"While they wait for the manager the forecast error is {_pct(sa['error']['flagged days held out'])}.", "",
+                  f"**Who says if a flagged record is a mistake?** {v['flags']} flagged records with a known truth "
+                  f"({v['by_kind']['count']} counts, {v['by_kind']['edit']} order edits, {v['by_kind']['sales_day']} sales days). "
+                  "Right = the right call; unsure = the manager has to look; wrong = a mistake called real or the opposite (the harmful case).", ""]
+        arms = [("Rules alone", v["rules"])] + [(n, v[k]) for k, n in (("claude", "Claude alone (asked about every record)"),
+                                                                       ("rules_then_claude", "The app: rules where sure, Claude for the rest")) if k in v]
+        lines += [_table(["Who decides", "Right", "Unsure", "Wrong", "Asked Claude"],
+                         [[n, a["right"], a["unsure"], a["wrong"], a.get("asked_claude", 0)] for n, a in arms]), ""]
+        if "claude" not in v:
+            lines += ["Claude columns: run `python -m evals --ai`.", ""]
     lines += ["## 4. Invoice reader", ""]
     inv = r["invoice"]
     if "skipped" in inv:

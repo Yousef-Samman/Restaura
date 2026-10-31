@@ -1,40 +1,40 @@
 {
  "run": {
-  "at": "2026-10-30T23:45:02+00:00",
+  "at": "2026-10-31T05:00:50+00:00",
   "ai_model": "claude-haiku-5-5",
-  "ai_at": "2026-10-30T23:26:55+00:00",
-  "seconds": 408
+  "ai_at": "2026-10-31T05:00:50+00:00",
+  "seconds": 815
  },
  "cashier": {
   "app sample data": {
    "held_out_orders_days": 7,
-   "distinct_carts": 29,
+   "distinct_carts": 27,
    "methods": {
     "Best sellers (baseline)": {
-     "cases": 251,
-     "hit_at_2": 0.32270916334661354,
-     "precision": 0.16533864541832669
+     "cases": 270,
+     "hit_at_2": 0.34074074074074073,
+     "precision": 0.17037037037037037
     },
     "Restaura rules (app)": {
-     "cases": 251,
-     "hit_at_2": 0.6613545816733067,
-     "precision": 0.3645418326693227
+     "cases": 270,
+     "hit_at_2": 0.6666666666666666,
+     "precision": 0.3648148148148148
     },
     "Ablation: order history only": {
-     "cases": 251,
-     "hit_at_2": 0.5657370517928287,
-     "precision": 0.31673306772908366
+     "cases": 270,
+     "hit_at_2": 0.5740740740740741,
+     "precision": 0.31851851851851853
     },
     "Ablation: pairing rules only": {
-     "cases": 251,
-     "hit_at_2": 0.2868525896414343,
-     "precision": 0.14940239043824702
+     "cases": 270,
+     "hit_at_2": 0.2777777777777778,
+     "precision": 0.14444444444444443
     },
     "Restaura with Claude": {
-     "cases": 251,
-     "hit_at_2": 0.7051792828685259,
-     "precision": 0.38645418326693226,
-     "carts": 29,
+     "cases": 270,
+     "hit_at_2": 0.7037037037037037,
+     "precision": 0.38333333333333336,
+     "carts": 27,
      "fell_back_to_rules": 0
     }
    }
@@ -65,8 +65,8 @@
     },
     "Restaura with Claude": {
      "cases": 306,
-     "hit_at_2": 0.8758169934640523,
-     "precision": 0.5228758169934641,
+     "hit_at_2": 0.8856209150326797,
+     "precision": 0.5277777777777778,
      "carts": 26,
      "fell_back_to_rules": 0
     }
@@ -484,6 +484,246 @@
    "wrong_suggestions": 0
   }
  },
+ "data_check": {
+  "counts": {
+   "stores": 30,
+   "weeks": 8,
+   "slips": 34,
+   "results": {
+    "off": {
+     "right": 3,
+     "wrong": 0,
+     "missed": 15
+    },
+    "on": {
+     "right": 16,
+     "wrong": 0,
+     "missed": 2
+    }
+   }
+  },
+  "sales": {
+   "mistakes": 8,
+   "real_odd_days": 7,
+   "flagged": 14,
+   "mistakes_caught": 8,
+   "real_flagged": 6,
+   "normal_flagged": 0,
+   "error": {
+    "no check": 0.14282191109701695,
+    "flagged days held out": 0.06318501396382745,
+    "after the manager decides": 0.06318501396382745
+   }
+  },
+  "verdicts": {
+   "flags": 77,
+   "by_kind": {
+    "count": 56,
+    "edit": 7,
+    "sales_day": 14
+   },
+   "rules": {
+    "right": 59,
+    "unsure": 18,
+    "wrong": 0
+   },
+   "claude": {
+    "right": 58,
+    "unsure": 18,
+    "wrong": 1,
+    "asked_claude": 77,
+    "holidays_named": 4,
+    "wrong_examples": [
+     {
+      "what": "Hazelnut spread count: 20760 g extra, the recipes used 14800",
+      "truth": "real",
+      "verdict": "mistake",
+      "why": "The count of 28,250 g is about 3.8 times the 7,490 g expected and shows +140% against recipe use, far above the other counts. This looks like an extra digit or a double-entered count, so recheck the sheet and the jar count."
+     }
+    ],
+    "claude_examples": [
+     {
+      "what": "Hazelnut spread count: 19850 g missing, the recipes used 14500",
+      "truth": "mistake",
+      "verdict": "mistake",
+      "why": "The counted 1,930 g is about one-ninth of the 21,780 g the system expected, which looks like a dropped digit in the count rather than real stock loss. Recount the shelf and check the 1,930 entry against the sheet.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 7040 g missing, the recipes used 12500",
+      "truth": "mistake",
+      "verdict": "unsure",
+      "why": "The count is 2,490 g against 9,530 g expected, about 3.8 times lower, and the 7,040 g gap doesn't reverse any earlier entry. The facts don't show whether it is a slip or real use, so recount the hazelnut spread and check the entry.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 20760 g extra, the recipes used 14800",
+      "truth": "real",
+      "verdict": "mistake",
+      "why": "The count of 28,250 g is about 3.8 times the 7,490 g expected and shows +140% against recipe use, far above the other counts. This looks like an extra digit or a double-entered count, so recheck the sheet and the jar count.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 18280 g missing, the recipes used 13600",
+      "truth": "mistake",
+      "verdict": "mistake",
+      "why": "The counted 1,920 g is about one tenth of the 20,200 g the system expected, and the other counts were only about 10% off the recipe usage. This looks like a dropped zero, so the real count was probably about 19,200 g.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 15430 g extra, the recipes used 14500",
+      "truth": "real",
+      "verdict": "real",
+      "why": "This count adds back about 15,430 g of the 18,280 g removed by the previous count, which fits a correction of the earlier slip. The manager should still confirm the 23,250 g count, since it is well above the expected 7,820 g.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 23090 g missing, the recipes used 15100",
+      "truth": "mistake",
+      "verdict": "mistake",
+      "why": "The counted 2540 g is about one tenth of the 25630 g the system expected, and adding a zero gives 25400 g, which is close to expected. This looks like a dropped zero in the count entry, so the manager should recount the jar and fix the entry.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 23300 g extra, the recipes used 13200",
+      "truth": "real",
+      "verdict": "real",
+      "why": "This count puts back 23300 g, almost exactly what the March 22 count took off (23090 g), so it reads as the correction of that slip. The manager should still confirm the 31940 g count is right, since it is well above the 8640 g expected.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 28930 g missing, the recipes used 13700",
+      "truth": "mistake",
+      "verdict": "mistake",
+      "why": "The count is 211% off what the recipes used, while the other counts stayed between -27% and +160%. The counted 2940 g is about a tenth of the 31870 g the system expected, which looks like a dropped digit or a typing slip. Recount the hazelnut spread shelf and check the entry.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 22830 g extra, the recipes used 14300",
+      "truth": "real",
+      "verdict": "real",
+      "why": "This count mostly reverses the 28930 g shortfall from the April 12 count, so it reads as the correction of that slip rather than a new event. The match is not exact (22830 g versus 28930 g), so confirm the counted 31270 g on the shelf.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 32140 g missing, the recipes used 14800",
+      "truth": "mistake",
+      "verdict": "mistake",
+      "why": "The count of 3300 g is about a tenth of the 35440 g the system expected, and the next count finds about 35350 g on the shelf, so the 3300 is most likely a typing slip. Have the team recount hazelnut spread on 2026-04-12 and correct the entry.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 27550 g extra, the recipes used 15000",
+      "truth": "real",
+      "verdict": "real",
+      "why": "This count puts back most of the 32140 g that the April 12 count took off, and the 35350 g it finds is close to what the system expected before that bad count. It is the correction of the earlier slip, so the agents can trust it as the actual stock level.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 29610 g missing, the recipes used 15600",
+      "truth": "mistake",
+      "verdict": "mistake",
+      "why": "The counted 3,090 g is about a tenth of the 32,700 g the system expected, which looks like a missing zero or a typing slip, and it doesn't match the 15,600 g used. Recount the hazelnut spread shelf and correct the entry.",
+      "label": null
+     }
+    ]
+   },
+   "rules_then_claude": {
+    "right": 65,
+    "unsure": 12,
+    "wrong": 0,
+    "asked_claude": 18,
+    "holidays_named": 3,
+    "wrong_examples": [],
+    "claude_examples": [
+     {
+      "what": "Hazelnut spread count: 7040 g missing, the recipes used 12500",
+      "truth": "mistake",
+      "verdict": "unsure",
+      "why": "The count is 56% below what the recipes used, far from the other counts (about -15% to -17%, plus one +140%), but the counted figure is about a quarter of the system's expectation, not a tenfold slip. Recount the hazelnut spread on the shelf and check deliveries and transfers from 22 to 29 March.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 20760 g extra, the recipes used 14800",
+      "truth": "real",
+      "verdict": "unsure",
+      "why": "The count is 140% above what the recipes used and it is about 3.8 times the system's expected stock, not a clean 10x. It also does not exactly reverse the previous count's 7,040 g drop, so it could be a real delivery or a miscount. Check for a received delivery between 29 March and 5 April and recount the jars.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 30890 g extra, the recipes used 14500",
+      "truth": "real",
+      "verdict": "unsure",
+      "why": "The count is 30,890 g over the system's expected 9,120 g, about 4.4 times expected, which is not a clean 10x or 0.1x slip. The previous count was 5,970 g short, and that does not match this extra amount, so it is not a clear correction either. Recount the hazelnut spread jars on 2026-04-19 and check the entries for a unit or extra-digit typing error before trusting the figure.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 6160 g missing, the recipes used 11900",
+      "truth": "mistake",
+      "verdict": "unsure",
+      "why": "The gap of 6160 g is about half the 11900 g the recipes used, which is not a clear 10x or 0.1x error, and it doesn't reverse the earlier 30480 g loss. Other counts for this ingredient also swing widely, so it could be a real shortfall or a counting error. Recount the hazelnut spread jar by jar and check whether the 19 April count of -30480 g was itself a slip.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 26240 g extra, the recipes used 15300",
+      "truth": "real",
+      "verdict": "unsure",
+      "why": "The count shows 26,240 g more than the system expected, about 4.6 times the expected 7,380 g, which is not a clean 10x slip. It also doesn't reverse the previous count's -6,070 g, and other counts this period swung widely, so it's hard to tell. Have someone weigh the jar and recount the hazelnut spread, and check whether the 33,620 g entry has an extra digit or a unit mix-up.",
+      "label": null
+     },
+     {
+      "what": "Hazelnut spread count: 38220 g extra, the recipes used 14400",
+      "truth": "real",
+      "verdict": "unsure",
+      "why": "The counted stock is about 5 times the system's expected figure, which is not a clean 10x slip, and no holiday or event explains it. The other counts this period also swing widely, so the count method itself may be unreliable. Check whether a hazelnut spread delivery was received but not logged, whether the count sheet mixed up jars and grams, and recount the shelf before trusting this.",
+      "label": null
+     },
+     {
+      "what": "Sunday 22 February: sales 1.7x a usual Sunday",
+      "truth": "real",
+      "verdict": "real",
+      "why": "Sales were 1.65 times a usual Sunday, with more orders (58 against a usual 37) at a normal average order, and no duplicated orders. This fell in Ramadan, when evening trade is typically busier.",
+      "label": "Ramadan"
+     },
+     {
+      "what": "Monday 23 February: sales 0.4x a usual Monday",
+      "truth": "mistake",
+      "verdict": "unsure",
+      "why": "Sales were only 0.36 times a usual Monday, with 14 orders at a normal average, so it looks like fewer orders rather than a typing slip. The facts don't show whether the import stopped early, so check the day's last order time and whether the store was closed.",
+      "label": null
+     },
+     {
+      "what": "Thursday 5 March: sales 1.9x a usual Thursday",
+      "truth": "real",
+      "verdict": "real",
+      "why": "Sales were 1.92 times a usual Thursday, with 100 orders against a usual 51 at a normal average order and no duplicated orders. No specific holiday in the facts explains it, so it reads as a busy day.",
+      "label": null
+     },
+     {
+      "what": "Friday 20 March: sales 1.8x a usual Friday",
+      "truth": "real",
+      "verdict": "real",
+      "why": "Sales were 1.79 times a usual Friday, with 133 orders at a normal average order, and this date falls around Eid al-Fitr.",
+      "label": "Eid al-Fitr"
+     },
+     {
+      "what": "Saturday 21 March: sales 1.9x a usual Saturday",
+      "truth": "real",
+      "verdict": "real",
+      "why": "Sales were 1.86 times a usual Saturday, with 92 orders at a normal average order, on the day after Eid al-Fitr when many people were still on holiday.",
+      "label": "Eid al-Fitr holiday"
+     },
+     {
+      "what": "Thursday 14 May: sales 1.7x a usual Thursday",
+      "truth": "real",
+      "verdict": "real",
+      "why": "Sales were 1.75 times a usual Thursday, with 117 orders against a usual 70 at a normal average order and no duplicated orders. No holiday in the facts explains it, so it reads as a busy day.",
+      "label": null
+     }
+    ]
+   }
+  }
+ },
  "fixes": [
   {
    "what": "Forecast follows a change in sales within a week",
@@ -529,9 +769,9 @@
   }
  ],
  "tests": {
-  "at": "2026-10-30T23:51:51+00:00",
-  "passed": 88,
-  "total": 88,
+  "at": "2026-10-31T05:14:26+00:00",
+  "passed": 93,
+  "total": 93,
   "cases": [
    {
     "file": "test_auth",
@@ -571,6 +811,31 @@
    {
     "file": "test_auth",
     "name": "test_staff_pin_sign_in_only_on_paired_ipad",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_data_check",
+    "name": "test_sample_mistakes_are_found_and_explained",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_data_check",
+    "name": "test_held_day_is_left_out_of_the_forecast",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_data_check",
+    "name": "test_manager_decides",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_data_check",
+    "name": "test_rules_know_a_correction_from_a_slip",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_data_check",
+    "name": "test_check_makes_learning_better_in_simulation",
     "outcome": "passed"
    },
    {

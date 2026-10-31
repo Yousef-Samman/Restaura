@@ -52,7 +52,7 @@ def count(db: Session, ingredient_id: int, counted: float) -> float:
     ing = db.get(Ingredient, ingredient_id)
     diff = counted - ing.on_hand
     ing.on_hand = counted
-    db.add(StockMove(ingredient_id=ingredient_id, qty=diff, kind="count", ref="monthly count"))
+    db.add(StockMove(ingredient_id=ingredient_id, qty=diff, kind="count", ref="monthly count", counted=counted))
     return diff
 
 

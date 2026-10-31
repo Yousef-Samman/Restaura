@@ -1,4 +1,5 @@
 """Runs the stock check by itself once the branch has closed, so the manager finds the draft orders waiting.
+First it checks the day's records, so nothing that looks wrong is learned from before the manager sees it.
 On the last night of the work week (Saturday) it also runs the staff check, so everyone has a new tip on Sunday.
 Off unless NIGHTLY_STOCK_CHECK is set (HH:MM, store time, for example 23:30). The manager still approves every order."""
 import datetime as dt
@@ -8,7 +9,7 @@ import threading
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from .agents import overview, staff_agent, stock_agent
+from .agents import data_check, overview, staff_agent, stock_agent
 from .agents.llm import LLM
 from .models import AgentRun
 from .routines import local_now
@@ -37,6 +38,8 @@ def check_once(Session_: sessionmaker, llm: LLM, run_at: dt.time, now: dt.dateti
             last = last + (now - dt.datetime.now(dt.UTC).replace(tzinfo=None))
         if not is_due(now, run_at, last):
             return False
+        data_check.run(db, llm)  # hold anything that doesn't fit before the agents learn from it
+        db.commit()
         stock_agent.run(db, llm)
         overview.run(db, llm)
         if now.weekday() == 5:

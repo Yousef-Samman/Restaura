@@ -971,3 +971,6 @@ body.has-hero .mgr-top { padding-bottom: 10px; }
 .sd-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .sd-row .field input { min-width: 0; width: 100%; box-sizing: border-box; }
 .list-item .x { width: 32px; height: 32px; border-radius: 10px; color: var(--muted); font-size: 18px; flex: none; }
+.tipcard.dc .k { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tipcard.dc .k .chip { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.tipcard.dc .k .chip:not(.draft):not(.received) { background: var(--cloud); color: var(--ink); }
