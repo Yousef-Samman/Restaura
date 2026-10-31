@@ -1,5 +1,6 @@
 import datetime as dt
 import json
+import logging
 from pathlib import Path
 from urllib.parse import quote
 
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session, object_session, selectinload
 
 from . import auth, evaluation, finance, forecast, mailer, routines, sales_report, staff as staffing, stock
 from . import nightly
+from .throttle import Throttle
 from .email_template import HEADER_CID, order_email_html
 from .agents import cashier, data_check, invoice, overview, staff_agent, stock_agent, stock_memory
 from .agents.stock_agent import split_change
@@ -140,6 +142,8 @@ class EditLine(BaseModel):
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    if settings.manager_password == "manager-demo" or settings.cashier_password == "cashier-demo":
+        logging.getLogger("restaura").warning("Demo passwords are in use. Set MANAGER_PASSWORD and CASHIER_PASSWORD before showing the app to anyone.")
     engine = make_engine(settings.database_url)
     Session_ = make_sessionmaker(engine)
     Base.metadata.create_all(engine)
@@ -175,11 +179,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         name = user.username or ""
         return int(name[6:]) if name.startswith("staff-") and name[6:].isdigit() else None
     cookie = dict(httponly=True, samesite="lax", secure=settings.secure_cookies)
+    throttle = Throttle()
+
+    def guarded(key: str, attempt):
+        """Runs a sign-in or PIN attempt; wrong ones count, and too many lock `key` for a while."""
+        throttle.check(key)
+        try:
+            out = attempt()
+        except HTTPException as exc:
+            if exc.status_code in (400, 401, 404):
+                throttle.fail(key)
+            raise
+        throttle.clear(key)
+        return out
+
+    def who(request: Request) -> str:
+        return request.client.host if request.client else "unknown"
 
     # ---- accounts and devices --------------------------------------------------
     @app.post("/api/auth/login")
     def do_login(body: Login, request: Request, response: Response, db: Session = Depends(get_db)):
-        token, user = auth.login(db, body.username, body.password, request.cookies.get(auth.DEVICE_COOKIE))
+        token, user = guarded(f"login:{body.username.strip().lower()}:{who(request)}",
+                              lambda: auth.login(db, body.username, body.password, request.cookies.get(auth.DEVICE_COOKIE)))
         response.set_cookie(auth.SESSION_COOKIE, token, max_age=auth.SESSION_HOURS * 3600, **cookie)
         return {"name": user.name, "role": user.role, "home": "/cashier" if user.role == "cashier" else "/manager"}
 
@@ -193,7 +214,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/auth/staff-login")
     def do_staff_login(body: StaffLogin, request: Request, response: Response, db: Session = Depends(get_db)):
-        token, user = auth.staff_login(db, body.staff_id, body.pin, request.cookies.get(auth.DEVICE_COOKIE))
+        token, user = guarded(f"staff:{body.staff_id}:{who(request)}",
+                              lambda: auth.staff_login(db, body.staff_id, body.pin, request.cookies.get(auth.DEVICE_COOKIE)))
         response.set_cookie(auth.SESSION_COOKIE, token, max_age=auth.SESSION_HOURS * 3600, **cookie)
         return {"name": user.name, "role": user.role, "home": "/cashier"}
 
@@ -232,8 +254,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"ok": True}
 
     @app.post("/api/devices/pair")
-    def pair_complete(body: PairCode, response: Response, db: Session = Depends(get_db)):
-        token, dev = auth.complete_pairing(db, body.code)
+    def pair_complete(body: PairCode, request: Request, response: Response, db: Session = Depends(get_db)):
+        token, dev = guarded(f"pair:{who(request)}", lambda: auth.complete_pairing(db, body.code))
         response.set_cookie(auth.DEVICE_COOKIE, token, max_age=5 * 365 * 24 * 3600, **cookie)
         return {"name": dev.name}
 
@@ -371,10 +393,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # ---- staff and attendance -------------------------------------------------------
     @app.post("/api/staff/clock")
-    def clock(body: ClockIn, db: Session = Depends(get_db), _=Depends(staff)):
-        r = staffing.clock(db, body.pin)
-        if not r:
-            raise HTTPException(404, "PIN not recognised")
+    def clock(body: ClockIn, request: Request, db: Session = Depends(get_db), _=Depends(staff)):
+        def attempt():
+            r = staffing.clock(db, body.pin)
+            if not r:
+                raise HTTPException(404, "PIN not recognised")
+            return r
+        r = guarded(f"clock:{who(request)}", attempt)
         db.commit()
         return r
 

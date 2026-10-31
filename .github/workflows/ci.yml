@@ -22,9 +22,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: backend/pyproject.toml
-      - name: Install
-        run: pip install -e ".[dev,eval]"
+          cache-dependency-path: backend/requirements.lock
+      - name: Install (the exact versions in requirements.lock)
+        run: pip install -r requirements.lock && pip install --no-deps -e .
       - name: Tests, robustness and regression checks
         run: pytest -q
       - name: Evaluation (rules only, no key)
