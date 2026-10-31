@@ -7,6 +7,7 @@ measures; the agent decides what each person should work on and words the tip. T
 the number the tip targeted moved. Without Claude, the same tools run in a fixed order (the rules)."""
 import datetime as dt
 import json
+import re
 from collections import Counter, defaultdict
 
 from sqlalchemy import func, select
@@ -36,6 +37,11 @@ FOCUS = {
 def week_start(day: dt.date) -> dt.date:
     """Saudi work week: Sunday to Saturday."""
     return day - dt.timedelta(days=(day.weekday() + 1) % 7)
+
+
+def percent_words(text: str) -> str:
+    """Claude sometimes quotes a share as the tool gives it (0.118); the manager reads percentages (12%)."""
+    return re.sub(r"(?<![\d./])0\.\d{1,3}(?![\d/])", lambda m: f"{round(float(m.group()) * 100)}%", text)
 
 
 def _pct(a: float, b: float) -> float | None:
@@ -146,7 +152,9 @@ SYSTEM = (
     "the iPad. Pick the focus the tip should move. Learn from each person's history: build on the kinds of tip that "
     "work for them, and don't repeat a focus that has not worked twice; try another angle instead. If last week's tip "
     "worked, say so in the why. The why is one "
-    "sentence for the manager and quotes the numbers exactly as the tools give them; never do your own arithmetic. "
+    "sentence for the manager and quotes the numbers as the tools give them; never do your own arithmetic. Shares "
+    "(offers accepted, items taken off, on time) are fractions in the tools: always write them as whole percents "
+    "(0.118 is 12%), never as decimals. "
     "Finish with a one-sentence headline for the manager."
 )
 TASK = "It's the end of the week. Check how each person worked and set each one's tip for next week."
@@ -252,16 +260,16 @@ class _Check:
             others = [o.name for o in self.members if o is not m and o.name.lower() in args["tip"].lower()]
             if others:
                 return f"The tip names {', '.join(others)}. It may only talk about {m.name}'s own work.", False
-            self.tips[m.id] = {"member": m, "tip": args["tip"].strip(), "why": args["why"].strip(), "focus": focus,
+            self.tips[m.id] = {"member": m, "tip": percent_words(args["tip"].strip()), "why": percent_words(args["why"].strip()), "focus": focus,
                                "baseline": self.now[m.id].measure(focus)}
-            self.step(f"Set {m.name}'s tip", args["tip"].strip())
+            self.step(f"Set {m.name}'s tip", self.tips[m.id]["tip"])
             return "Saved.", True
         if name == "finish":
             missing = [m.name for m in self.members if m.id not in self.tips]
             if missing:
                 return f"Not finished: set a tip for {', '.join(missing)} first.", False
-            self.finished = args
-            self.step("Wrote the summary", args["headline"])
+            self.finished = {**args, "headline": percent_words(args["headline"])}
+            self.step("Wrote the summary", self.finished["headline"])
             return "Done.", True
         return f"There is no tool called {name}.", False
 
