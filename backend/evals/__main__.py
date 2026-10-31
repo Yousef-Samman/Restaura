@@ -18,7 +18,7 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from . import cashier_eval, forecast_eval, invoice_eval, stock_eval
+from . import cashier_eval, data_check_eval, forecast_eval, invoice_eval, stock_eval
 from .common import ai_llm
 from .fixes import FIXES
 from .report import markdown
@@ -53,6 +53,7 @@ def main() -> None:
         "learning": {"forecast_special_days": forecast_eval.special_days()},
     }
     results["learning"]["stock"] = results["stock"]["learning"]
+    results["data_check"] = data_check_eval.run(llm)
     if llm:
         results["run"]["ai_at"] = results["run"]["at"]
     results["fixes"] = FIXES
@@ -91,6 +92,9 @@ def _carry_ai(results: dict, previous: dict) -> None:
         results["stock"]["with Claude"] = previous["stock"]["with Claude"]
         if "busy_days_ahead" in previous["stock"]:
             results["stock"]["busy_days_ahead"] = previous["stock"]["busy_days_ahead"]
+    for arm in ("claude", "rules_then_claude"):
+        if arm in previous.get("data_check", {}).get("verdicts", {}):
+            results["data_check"]["verdicts"][arm] = previous["data_check"]["verdicts"][arm]
     if "skipped" not in previous.get("invoice", {"skipped": 1}):
         results["invoice"] = previous["invoice"]
 

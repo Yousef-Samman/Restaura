@@ -101,6 +101,7 @@ class StockMove(Base):
     qty: Mapped[float] = mapped_column(Float)  # + in, - out
     kind: Mapped[str] = mapped_column(String(20))  # opening | sale | delivery | count
     ref: Mapped[str | None] = mapped_column(String(60))
+    counted: Mapped[float | None] = mapped_column(Float)  # for a count: what was counted (qty is the difference)
 
 
 class PurchaseOrder(Base):
@@ -299,3 +300,22 @@ class SpecialDay(Base):
     date: Mapped[dt.date] = mapped_column(Date, unique=True)
     label: Mapped[str] = mapped_column(String(60))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+
+
+class DataFlag(Base):
+    """A record that looks wrong (a count, an order edit, a delivery, a day's sales), found by code before the agents
+    learn from it. Claude (or the rules) says whether it looks like a mistake and why; the manager decides. Until
+    then the record is held out of learning, and a record the manager marks wrong stays out."""
+    __tablename__ = "data_flag"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(12))  # count | edit | delivery | sales_day
+    ref: Mapped[str] = mapped_column(String(40), unique=True)  # stock_move:<id> | po_line:<id> | po:<id> | day:<date>
+    title: Mapped[str] = mapped_column(String(200))
+    facts: Mapped[str] = mapped_column(Text)  # what code measured, as JSON
+    verdict: Mapped[str] = mapped_column(String(10), default="unsure")  # mistake | real | unsure
+    why: Mapped[str] = mapped_column(Text, default="")
+    label: Mapped[str | None] = mapped_column(String(60))  # for a real sales day: what to tag it
+    source: Mapped[str] = mapped_column(String(10), default="rules")  # ai | rules
+    status: Mapped[str] = mapped_column(String(10), default="waiting")  # waiting | kept | wrong
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+    decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime)

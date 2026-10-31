@@ -20,7 +20,7 @@ from collections import defaultdict
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .models import Ingredient, MenuItem, Order, OrderLine, RecipeLine, SpecialDay
+from .models import DataFlag, Ingredient, MenuItem, Order, OrderLine, RecipeLine, SpecialDay
 
 WEEKS = 8  # weeks of history that set each weekday's share of the week
 LEVEL_DAYS = 7  # recent days that set the current level
@@ -146,9 +146,18 @@ def _history(db: Session, today: dt.date):
     return since, daily, orders, items
 
 
+def held_days(db: Session) -> set[dt.date]:
+    """Days the data check is holding out (waiting for the manager, or marked wrong): they don't teach the forecast."""
+    return {dt.date.fromisoformat(r.partition(":")[2]) for r in
+            db.scalars(select(DataFlag.ref).where(DataFlag.kind == "sales_day", DataFlag.status.in_(["waiting", "wrong"])))}
+
+
 def forecast(db: Session, days: int = 7) -> dict:
     today = dt.date.today()
-    since, daily, orders, items = _history(db, today)
+    since, recorded, orders, items = _history(db, today)
+    held = held_days(db)
+    daily = {d: v for d, v in recorded.items() if d not in held}
+    orders = {d: n for d, n in orders.items() if d not in held}
     tagged = db.scalars(select(SpecialDay)).all()
     special, ids = {t.date: t.label for t in tagged}, {t.date: t.id for t in tagged}
     lifts = learn_lifts(daily, special, today)
@@ -190,7 +199,8 @@ def forecast(db: Session, days: int = 7) -> dict:
                             "by_day": [round(x, 1) for x in by_day[ing.id]],
                             "runs_out": (today + dt.timedelta(days=math.floor(left))).isoformat() if left is not None and left < days else None})
     ingredients.sort(key=lambda r: (r["runs_out"] is None, r["runs_out"] or "", r["name"]))
-    actual = [{"date": (today - dt.timedelta(days=k)).isoformat(), "sales": round(daily.get(today - dt.timedelta(days=k), 0), 2)} for k in range(14, 0, -1)]
+    actual = [{"date": (today - dt.timedelta(days=k)).isoformat(), "sales": round(recorded.get(today - dt.timedelta(days=k), 0), 2),
+               "held": today - dt.timedelta(days=k) in held} for k in range(14, 0, -1)]
     return {"days": out_days, "actual": actual, "tomorrow_items": [{"name": n, "qty": round(q)} for n, q in tomorrow[:8]],
             "ingredients": ingredients, "method": f"Last {LEVEL_DAYS} days' average sales, adjusted for the weekday using the last {WEEKS} weeks.",
             "scorecard": scorecard({d: v for d, v in daily.items() if d not in special}, today),

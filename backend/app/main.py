@@ -13,13 +13,13 @@ from sqlalchemy.orm import Session, object_session, selectinload
 from . import auth, evaluation, finance, forecast, mailer, routines, sales_report, staff as staffing, stock
 from . import nightly
 from .email_template import HEADER_CID, order_email_html
-from .agents import cashier, invoice, overview, staff_agent, stock_agent, stock_memory
+from .agents import cashier, data_check, invoice, overview, staff_agent, stock_agent, stock_memory
 from .agents.stock_agent import split_change
 from .agents.llm import LLM
 from .config import Settings, get_settings
 from .db import Base, make_engine, make_sessionmaker
 from .models import (AgentRun, Device, Expense, RoutineTask, Shift, StaffMember, Ingredient, MenuItem, Order, OrderLine, Outbox, PurchaseOrder,
-                     PurchaseOrderLine, RecipeLine, Lesson, SpecialDay, StaffReview, StaffTip, StockMove, Supplier, SuggestionEvent)
+                     PurchaseOrderLine, RecipeLine, DataFlag, Lesson, SpecialDay, StaffReview, StaffTip, StockMove, Supplier, SuggestionEvent)
 from .seed import STORE_UTC_OFFSET, seed
 
 STATIC = Path(__file__).parent / "static"
@@ -46,6 +46,11 @@ class SupplierIn(BaseModel):
     phone: str | None = Field(None, max_length=20)
     lead_days: int = Field(1, ge=0, le=30)
     ingredient_ids: list[int] = []
+
+
+class DataCheckIn(BaseModel):
+    correct: bool  # True: the record is right, learn from it. False: it's a mistake, leave it out.
+    label: str | None = Field(None, max_length=60)  # for a real sales day: tag it as a special day
 
 
 class SpecialDayIn(BaseModel):
@@ -596,6 +601,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         stock_memory.dismiss(l)
         db.commit()
         return stock_memory.as_dict(l)
+
+    # ---- the data check: records that don't fit, held out of learning until the manager decides --------------------
+    @app.get("/api/data-checks")
+    def data_checks(db: Session = Depends(get_db), _=Depends(manager_only)):
+        waiting = data_check.run(db, llm)
+        db.commit()
+        return {"waiting": [data_check.as_dict(f) for f in waiting]}
+
+    @app.post("/api/data-checks/{flag_id}")
+    def decide_data_check(flag_id: int, body: DataCheckIn, db: Session = Depends(get_db), _=Depends(manager_only)):
+        f = db.get(DataFlag, flag_id)
+        if not f or f.status != "waiting":
+            raise HTTPException(404, "This check is no longer waiting")
+        data_check.decide(db, f, body.correct, body.label)
+        db.commit()
+        return data_check.as_dict(f)
 
     @app.get("/api/agents/runs")
     def agent_runs(db: Session = Depends(get_db), _=Depends(manager_only)):

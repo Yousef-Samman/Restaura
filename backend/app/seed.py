@@ -91,6 +91,7 @@ def seed(db: Session, history_days: int = 30) -> None:
     _seed_staff(db)
     _seed_service(db)
     _seed_learning(db, ingredients, suppliers)
+    _seed_data_mistakes(db, ingredients)
     db.commit()
 
 
@@ -125,13 +126,15 @@ def _seed_learning(db: Session, ingredients: dict, suppliers: dict) -> None:
         sent = dt.datetime.combine(today - dt.timedelta(days=days_ago), dt.time(18))  # 21:00 store time
         po = PurchaseOrder(supplier=suppliers["Dairy Farms Co."], status="received", note="Sample past order",
                            created_at=sent, sent_at=sent, sent_via="email", received_at=sent + dt.timedelta(days=2))
+        typo = days_ago == EXTRA_ZERO_DAYS_AGO  # a sample mistake for the data check: 20000 typed for 2000
         po.lines = [PurchaseOrderLine(ingredient=milk, drafted_qty=12000, qty=14400 if raised else 12000, reason="Sample past order"),
-                    PurchaseOrderLine(ingredient=cream, drafted_qty=2000, qty=2000, reason="Sample past order")]
+                    PurchaseOrderLine(ingredient=cream, drafted_qty=2000, qty=20000 if typo else 2000, reason="Sample past order")]
         db.add(po)
         db.flush()
         # the delivery record the Orders page shows; before the opening count, so today's stock is unchanged
         for l in po.lines:
-            db.add(StockMove(ingredient_id=l.ingredient.id, qty=l.qty, kind="delivery", ref=f"PO {po.id}", at=po.received_at))
+            db.add(StockMove(ingredient_id=l.ingredient.id, qty=l.drafted_qty if typo else l.qty, kind="delivery", ref=f"PO {po.id}",
+                             at=po.received_at))
     straw = ingredients["Strawberries"]
     anchor = today - dt.timedelta(days=28)
     db.add(StockMove(ingredient_id=straw.id, qty=0, kind="count", ref="sample count", at=dt.datetime.combine(anchor, dt.time(9))))
@@ -141,6 +144,37 @@ def _seed_learning(db: Session, ingredients: dict, suppliers: dict) -> None:
         db.add(StockMove(ingredient_id=straw.id, qty=-round(short * _recipe_use(db, straw.id, prev, day)), kind="count",
                          ref="sample count", at=dt.datetime.combine(day, dt.time(9))))
         prev = day
+
+
+EXTRA_ZERO_DAYS_AGO, DOUBLE_IMPORT_DAYS_AGO, COUNT_SLIP_DAYS_AGO, PARTIAL_IMPORT_DAYS_AGO = 13, 4, 5, 3
+
+
+def _seed_data_mistakes(db: Session, ingredients: dict) -> None:
+    """Sample mistakes for the data check to find before the agents learn from them (illustrative): one day's sales
+    imported twice, another whose import stopped at 16:00, a hazelnut spread count typed with a missing zero, and
+    (in _seed_learning) 20000 ml of cream typed on an order line where 2000 was meant."""
+    today = dt.date.today()
+    day = today - dt.timedelta(days=DOUBLE_IMPORT_DAYS_AGO)
+    for o in db.scalars(select(Order).where(Order.business_date == day)).all():
+        twin = Order(business_date=day, source="history", total=o.total, created_at=o.created_at)
+        twin.lines = [OrderLine(menu_item_id=l.menu_item_id, qty=l.qty, price=l.price) for l in o.lines]
+        db.add(twin)
+    cut = dt.datetime.combine(today - dt.timedelta(days=PARTIAL_IMPORT_DAYS_AGO), dt.time(16)) - STORE_UTC_OFFSET
+    late = db.scalars(select(Order).where(Order.business_date == cut.date(), Order.created_at >= cut)).all()
+    late_ids = [o.id for o in late]
+    for e in db.scalars(select(SuggestionEvent).where(SuggestionEvent.order_id.in_(late_ids))):
+        db.delete(e)
+    for o in late:
+        db.delete(o)
+    spread = ingredients["Hazelnut spread"]
+    slip = today - dt.timedelta(days=COUNT_SLIP_DAYS_AGO)
+    anchor = slip - dt.timedelta(days=6)
+    db.add(StockMove(ingredient_id=spread.id, qty=0, kind="count", ref="sample count", at=dt.datetime.combine(anchor, dt.time(9))))
+    db.flush()
+    expected = spread.on_hand  # counted 240 g where 2400 g was there: a missing zero
+    db.add(StockMove(ingredient_id=spread.id, qty=-round(expected * 0.9), counted=round(expected * 0.1), kind="count", ref="sample count",
+                     at=dt.datetime.combine(slip, dt.time(9))))
+    db.flush()
 
 
 # sample buying habits: the drinks and add-ons each dessert is usually ordered with (illustrative)

@@ -17,7 +17,7 @@ from collections import defaultdict
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import Ingredient, Lesson, Order, OrderLine, PurchaseOrder, PurchaseOrderLine, RecipeLine, StockMove, Supplier
+from ..models import DataFlag, Ingredient, Lesson, Order, OrderLine, PurchaseOrder, PurchaseOrderLine, RecipeLine, StockMove, Supplier
 
 WINDOW_DAYS = 90  # how far back the agent looks
 RECENT_ORDERS = 4  # an edit counts as a habit when it happens on most of the last few orders
@@ -46,13 +46,25 @@ def _since_applied(db: Session, subject: str, since: dt.datetime) -> dt.datetime
     return max(since, last) if last else since
 
 
+def held(db: Session, prefix: str) -> set[str]:
+    """Records the data check is holding out of learning (waiting for the manager, or marked wrong), as refs such
+    as "po_line:5"; see data_check.py."""
+    return set(db.scalars(select(DataFlag.ref).where(DataFlag.status.in_(["waiting", "wrong"]), DataFlag.ref.like(f"{prefix}:%"))))
+
+
+def _ids(refs: set[str]) -> set[int]:
+    return {int(r.partition(":")[2]) for r in refs}
+
+
 def _order_size(db: Session, since: dt.datetime) -> list[dict]:
     out = []
+    skip = _ids(held(db, "po_line"))
     for ing in db.scalars(select(Ingredient)):
         start = _since_applied(db, f"ingredient:{ing.id}", since)
         lines = db.execute(select(PurchaseOrderLine.qty, PurchaseOrderLine.drafted_qty).join(PurchaseOrder)
                            .where(PurchaseOrderLine.ingredient_id == ing.id, PurchaseOrderLine.drafted_qty > 0,
-                                  PurchaseOrder.status.in_(["sent", "received"]), PurchaseOrder.sent_at >= start)
+                                  PurchaseOrder.status.in_(["sent", "received"]), PurchaseOrder.sent_at >= start,
+                                  PurchaseOrderLine.id.not_in(skip))
                            .order_by(PurchaseOrder.sent_at.desc()).limit(RECENT_ORDERS)).all()
         ratios = [q / d for q, d in lines]
         ups = [r for r in ratios if r > 1 + EDIT_NOISE]
@@ -75,10 +87,11 @@ def _order_size(db: Session, since: dt.datetime) -> list[dict]:
 
 def _lead_time(db: Session, since: dt.datetime) -> list[dict]:
     out = []
+    skip = _ids(held(db, "po"))
     for sup in db.scalars(select(Supplier).where(Supplier.active)):
         pos = db.execute(select(PurchaseOrder.sent_at, PurchaseOrder.received_at)
                          .where(PurchaseOrder.supplier_id == sup.id, PurchaseOrder.status == "received",
-                                PurchaseOrder.sent_at >= _since_applied(db, f"supplier:{sup.id}", since), PurchaseOrder.received_at.is_not(None))).all()
+                                PurchaseOrder.sent_at >= _since_applied(db, f"supplier:{sup.id}", since), PurchaseOrder.received_at.is_not(None), PurchaseOrder.id.not_in(skip))).all()
         days = [((r + STORE_UTC_OFFSET).date() - (s + STORE_UTC_OFFSET).date()).days for s, r in pos]
         if len(days) < MIN_DELIVERIES:
             continue
@@ -104,6 +117,7 @@ def _recipe_use(db: Session, ingredient_id: int, after: dt.date, until: dt.date)
 
 def _usage(db: Session, since: dt.datetime) -> list[dict]:
     out = []
+    skip = _ids(held(db, "stock_move"))
     counts = defaultdict(list)
     for m in db.scalars(select(StockMove).where(StockMove.kind == "count", StockMove.at >= since).order_by(StockMove.at)):
         if m.at >= _since_applied(db, f"ingredient:{m.ingredient_id}", since):
@@ -114,13 +128,16 @@ def _usage(db: Session, since: dt.datetime) -> list[dict]:
                                                                  StockMove.kind.in_(["opening", "count"])))
         if anchor is None:  # the first count is the starting point
             anchor, moves = moves[0].at, moves[1:]
-        gaps, prev = [], (anchor + STORE_UTC_OFFSET).date()
+        gaps, prev, carry = [], (anchor + STORE_UTC_OFFSET).date(), 0.0
         for m in moves:
+            if m.id in skip:
+                carry += m.qty  # a held count doesn't end a period: the next good count covers both
+                continue
             day = (m.at + STORE_UTC_OFFSET).date()
             use = _recipe_use(db, ing_id, prev, day)
             if use > 0:
-                gaps.append(-m.qty / use)  # a count that comes up short = more used than the recipes say
-            prev = day
+                gaps.append(-(m.qty + carry) / use)  # a count that comes up short = more used than the recipes say
+            prev, carry = day, 0.0
         if len(gaps) < MIN_COUNTS or not all(g > COUNT_NOISE for g in gaps):
             continue  # only steady shortfalls; one odd count is a mistake, not a pattern
         g = sum(gaps) / len(gaps)
