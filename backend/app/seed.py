@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import (Attendance, Expense, Ingredient, RoutineCheck, RoutineTask, Shift, StaffMember, StaffReview, StaffTip, MenuItem,
-                     Order, OrderLine, RecipeLine, StockMove, SuggestionEvent, Supplier)
+                     Order, OrderLine, PurchaseOrder, PurchaseOrderLine, RecipeLine, SpecialDay, StockMove, SuggestionEvent, Supplier)
 
 SUPPLIERS = [
     ("Fresh Produce Co.", "orders@fresh-produce.example", 1),  # orders go by WhatsApp, see WHATSAPP below
@@ -85,11 +85,62 @@ def seed(db: Session, history_days: int = 30) -> None:
     db.add_all(items)
     db.flush()
     _seed_history(db, items, history_days)
+    _seed_special_days(db)
     _seed_expenses(db)
     _seed_routines(db)
     _seed_staff(db)
     _seed_service(db)
+    _seed_learning(db, ingredients, suppliers)
     db.commit()
+
+
+PROMO_DAYS_AGO, PROMO_LIFT, NEXT_PROMO_IN = (23, 9), 1.4, 3
+
+
+def _seed_special_days(db: Session) -> None:
+    """Two sample promotion days, 40% busier than normal, tagged by the manager, and the next promotion tagged
+    ahead, so the forecast can learn the lift (illustrative)."""
+    rng = random.Random(5)
+    today = dt.date.today()
+    for ago in PROMO_DAYS_AGO:
+        day = today - dt.timedelta(days=ago)
+        orders = db.scalars(select(Order).where(Order.business_date == day)).all()
+        for o in rng.sample(orders, round(len(orders) * (PROMO_LIFT - 1))):
+            extra = Order(business_date=day, source="history", total=o.total, created_at=o.created_at)
+            extra.lines = [OrderLine(menu_item_id=l.menu_item_id, qty=l.qty, price=l.price) for l in o.lines]
+            db.add(extra)
+        db.add(SpecialDay(date=day, label="Promotion"))
+    db.add(SpecialDay(date=today + dt.timedelta(days=NEXT_PROMO_IN), label="Promotion"))
+    db.flush()
+
+
+def _seed_learning(db: Session, ingredients: dict, suppliers: dict) -> None:
+    """Sample past orders and counts the stock agent learns from (illustrative, labelled as samples): the manager
+    raised Milk on 3 of the last 4 Dairy Farms orders, Dairy Farms took 2 days to deliver although it is set to 1,
+    and the last two strawberry counts came up about 12% short of what the recipes used."""
+    from .agents.stock_memory import _recipe_use
+    today = dt.date.today()
+    milk, cream = ingredients["Milk"], ingredients["Whipped cream"]
+    for days_ago, raised in ((27, True), (20, True), (13, False), (6, True)):
+        sent = dt.datetime.combine(today - dt.timedelta(days=days_ago), dt.time(18))  # 21:00 store time
+        po = PurchaseOrder(supplier=suppliers["Dairy Farms Co."], status="received", note="Sample past order",
+                           created_at=sent, sent_at=sent, sent_via="email", received_at=sent + dt.timedelta(days=2))
+        po.lines = [PurchaseOrderLine(ingredient=milk, drafted_qty=12000, qty=14400 if raised else 12000, reason="Sample past order"),
+                    PurchaseOrderLine(ingredient=cream, drafted_qty=2000, qty=2000, reason="Sample past order")]
+        db.add(po)
+        db.flush()
+        # the delivery record the Orders page shows; before the opening count, so today's stock is unchanged
+        for l in po.lines:
+            db.add(StockMove(ingredient_id=l.ingredient.id, qty=l.qty, kind="delivery", ref=f"PO {po.id}", at=po.received_at))
+    straw = ingredients["Strawberries"]
+    anchor = today - dt.timedelta(days=28)
+    db.add(StockMove(ingredient_id=straw.id, qty=0, kind="count", ref="sample count", at=dt.datetime.combine(anchor, dt.time(9))))
+    prev = anchor
+    for days_ago, short in ((18, 0.11), (6, 0.13)):
+        day = today - dt.timedelta(days=days_ago)
+        db.add(StockMove(ingredient_id=straw.id, qty=-round(short * _recipe_use(db, straw.id, prev, day)), kind="count",
+                         ref="sample count", at=dt.datetime.combine(day, dt.time(9))))
+        prev = day
 
 
 # sample buying habits: the drinks and add-ons each dessert is usually ordered with (illustrative)

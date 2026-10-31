@@ -44,7 +44,8 @@ def test_overview_delegates_to_the_stock_agent_once(ai_client, monkeypatch):
     assert not any(po["status"] == "draft" for po in ai_client.get("/api/purchase-orders").json())
     r = ai_client.post("/api/agents/overview/run").json()
     assert r["source"] == "ai" and r["headline"] == "Approve the drafts."
-    assert r["order_ids"] and all(po["status"] == "draft" for po in ai_client.get("/api/purchase-orders").json())
+    drafts = [po["id"] for po in ai_client.get("/api/purchase-orders").json() if po["status"] == "draft"]
+    assert r["order_ids"] and sorted(drafts) == sorted(r["order_ids"])  # the sample data's past orders stay received
     second, orders = seen[2][0], json.loads(seen[2][1]["content"])
     assert second["is_error"] and "already ran" in second["content"]
     assert len(orders["drafts_waiting"]) == len(r["order_ids"])

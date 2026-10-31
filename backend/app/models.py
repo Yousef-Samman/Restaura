@@ -30,6 +30,8 @@ class Ingredient(Base):
     min_level: Mapped[float] = mapped_column(Float)  # set by the manager
     par_level: Mapped[float] = mapped_column(Float)  # target level after a delivery
     on_hand: Mapped[float] = mapped_column(Float, default=0)
+    # multiplies the code's order quantity; changed only when the manager applies something the stock agent learned
+    order_factor: Mapped[float] = mapped_column(Float, default=1.0)
     supplier_id: Mapped[int] = mapped_column(ForeignKey("supplier.id"))
     supplier: Mapped[Supplier] = relationship()
 
@@ -110,6 +112,7 @@ class PurchaseOrder(Base):
     note: Mapped[str | None] = mapped_column(Text)
     sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
     sent_via: Mapped[str | None] = mapped_column(String(10))  # email | whatsapp, picked by the manager when approving
+    received_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
     supplier: Mapped[Supplier] = relationship()
     lines: Mapped[list["PurchaseOrderLine"]] = relationship(cascade="all, delete-orphan")
 
@@ -120,6 +123,7 @@ class PurchaseOrderLine(Base):
     purchase_order_id: Mapped[int] = mapped_column(ForeignKey("purchase_order.id"))
     ingredient_id: Mapped[int] = mapped_column(ForeignKey("ingredient.id"))
     qty: Mapped[float] = mapped_column(Float)
+    drafted_qty: Mapped[float | None] = mapped_column(Float)  # what the agent drafted, before the manager's edits
     reason: Mapped[str | None] = mapped_column(Text)
     ingredient: Mapped[Ingredient] = relationship()
 
@@ -267,3 +271,31 @@ class StaffTip(Base):
     source: Mapped[str] = mapped_column(String(10), default="rules")  # ai | rules
     seen_at: Mapped[dt.datetime | None] = mapped_column(DateTime)  # when the staff member tapped Got it
     staff: Mapped[StaffMember] = relationship()
+
+
+class Lesson(Base):
+    """Something an agent learned from what happened after it acted, as a suggestion the manager applies or not.
+    Nothing changes until the manager applies it."""
+    __tablename__ = "lesson"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent: Mapped[str] = mapped_column(String(20))  # stock | forecast
+    kind: Mapped[str] = mapped_column(String(20))  # order_size | lead_time | usage
+    subject: Mapped[str] = mapped_column(String(40))  # ingredient:<id> | supplier:<id>
+    title: Mapped[str] = mapped_column(String(200))
+    detail: Mapped[str] = mapped_column(Text)
+    current: Mapped[float] = mapped_column(Float)  # the value in use when it was learned
+    value: Mapped[float] = mapped_column(Float)  # the value it suggests
+    evidence: Mapped[int] = mapped_column(Integer)  # how many orders, deliveries or counts it rests on
+    status: Mapped[str] = mapped_column(String(12), default="suggested")  # suggested | applied | dismissed
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)
+    decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
+
+
+class SpecialDay(Base):
+    """A day the manager tags as not normal (Eid, payday, a promotion, a closed day). The forecast keeps tagged days
+    out of the normal pattern and learns each label's lift from the past tagged days."""
+    __tablename__ = "special_day"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    date: Mapped[dt.date] = mapped_column(Date, unique=True)
+    label: Mapped[str] = mapped_column(String(60))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=now)

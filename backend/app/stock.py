@@ -114,13 +114,15 @@ def plan_reorders(db: Session) -> list[dict]:
             continue
         qty = max(ing.par_level - max(ing.on_hand, 0), 0) + daily * lead
         step = 1 if ing.unit == "pcs" else 100
-        qty = math.ceil(qty / step) * step
+        qty = math.ceil(qty * ing.order_factor / step) * step
         plan.append({
             "ingredient": ing, "qty": qty, "daily": daily, "lead": lead,
             "reason": (f"On hand {ing.on_hand:.0f} {ing.unit}, minimum {ing.min_level:.0f}. " if ing.on_hand <= ing.min_level else
                        f"On hand {ing.on_hand:.0f} {ing.unit} lasts about {ing.on_hand / daily:.1f} days at {daily:.0f} {ing.unit}/day, "
                        f"and {ing.supplier.name} needs {lead} {'day' if lead == 1 else 'days'} to deliver. ")
                       + f"Ordering enough to refill to {ing.par_level:.0f} {ing.unit}, plus {lead} {'day' if lead == 1 else 'days'} of use "
-                      f"({daily:.0f} {ing.unit}/day) until the delivery arrives.",
+                      f"({daily:.0f} {ing.unit}/day) until the delivery arrives."
+                      + (f" Then {abs(ing.order_factor - 1):.0%} {'more' if ing.order_factor > 1 else 'less'}, from what the agent "
+                         f"learned and you applied." if ing.order_factor != 1 else ""),
         })
     return plan

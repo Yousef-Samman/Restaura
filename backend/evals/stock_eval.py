@@ -6,7 +6,9 @@
    delivery arrives, rounded up to 100 g/ml or 1 piece.
 2. 300 random stores: the agent must order every ingredient that needs it (recall), nothing that doesn't
    (precision), and enough that stock is back at par when the delivery arrives (sufficiency).
-3. With Claude (a tool-using agent): every quantity Claude didn't change is the code's, every change stays within
+3. Learning on vs off (learning()): simulated managers with editing habits and suppliers slower than their
+   setting; counts the edits and wrong lead-time weeks left with and without what the agent learns.
+4. With Claude (a tool-using agent): every quantity Claude didn't change is the code's, every change stays within
    half to 1.5x the code's quantity and carries a reason, every computed warning is still in the briefing, and every
    number Claude writes is one from the facts its tools returned (no made-up numbers).
 """
@@ -201,7 +203,7 @@ def properties(n: int = 300, seed: int = 9) -> dict:
 
 
 def run(llm=None, log=print) -> dict:
-    out = {"rules": scenarios(no_llm()), "random_stores": properties()}
+    out = {"rules": scenarios(no_llm()), "random_stores": properties(), "learning": learning()}
     if llm:
         out["with Claude"] = scenarios(llm)
         out["busy_days_ahead"] = busy_days_ahead(llm)
@@ -215,7 +217,70 @@ def run(llm=None, log=print) -> dict:
         b = out["busy_days_ahead"]
         log(f"  stock / busy days ahead (Claude): raised {b['raised']}/{b['runs']}, lowered {b['lowered']}, "
             f"out of range or missing {b['out_of_range_or_missing']}")
+    lr = out["learning"]
+    log(f"  stock / learning on vs off ({lr['stores']} stores x {lr['weeks']} weeks): manager edits {lr['edits_learning_off']} -> "
+        f"{lr['edits_learning_on']}, weeks with a wrong lead time {lr['wrong_lead_weeks_off']} -> {lr['wrong_lead_weeks_on']}, "
+        f"{lr['wrong_suggestions']}/{lr['suggestions']} suggestions wrong")
     p = out["random_stores"]
     log(f"  stock / {p['stores']} random stores: recall {p['recall']:.1%}, precision {p['precision']:.1%}, "
         f"too small {p['orders_too_small']}, too large {p['orders_too_large']}")
     return out
+
+
+def learning(weeks: int = 10, stores: int = 30, seed: int = 11) -> dict:
+    """Learning on vs off. Simulated stores where the manager has habits the agent doesn't know: some ingredients
+    always get raised or cut by a fixed share (others not), and some suppliers really deliver later than their
+    setting. Each week the agent drafts an order (the code's quantity times what was applied), the manager edits it
+    to what they want, and the delivery arrives after the real number of days. With learning on, a manager applies a
+    suggestion when it is within 10% of their habit and dismisses it otherwise; with learning off, nothing changes.
+    Measured: how many lines the manager still had to edit, and how many weeks a supplier's lead time was wrong."""
+    from app.agents import stock_memory
+    from app.models import Lesson
+    rng = random.Random(seed)
+    totals = {"on": {"edits": 0, "wrong_lead_weeks": 0}, "off": {"edits": 0, "wrong_lead_weeks": 0}}
+    wrong_suggestions, suggestions = 0, 0
+    for s in range(stores):
+        n_ing = 6
+        habits = [rng.choice([1.0, 1.0, 1.2, 0.8, 1.3, 1.1]) for _ in range(n_ing)]
+        true_lead = [rng.choice([1, 2, 2, 3]) for _ in range(2)]
+        for mode in ("on", "off"):
+            with fresh_db() as db:
+                sups = [Supplier(name=f"S{i}", email="s@example.com", lead_days=1) for i in range(2)]
+                ings = [Ingredient(name=f"I{i}", unit="g", unit_cost=0.01, min_level=100, par_level=1000, on_hand=0,
+                                   supplier=sups[i % 2]) for i in range(n_ing)]
+                db.add_all(sups + ings)
+                db.flush()
+                start = dt.datetime(2026, 1, 4, 18)
+                for w in range(weeks):
+                    sent = start + dt.timedelta(days=7 * w)
+                    today = (sent + dt.timedelta(days=1)).date()
+                    for i, sup in enumerate(sups):
+                        totals[mode]["wrong_lead_weeks"] += sup.lead_days != true_lead[i]
+                        po = PurchaseOrder(supplier=sup, status="received", sent_at=sent, created_at=sent,
+                                           received_at=sent + dt.timedelta(days=true_lead[i]))
+                        for j, ing in enumerate(ings):
+                            if j % 2 != i:
+                                continue
+                            drafted = round(5000 * ing.order_factor, -2)
+                            wanted = round(5000 * habits[j] * rng.gauss(1, 0.02), -2)
+                            totals[mode]["edits"] += abs(wanted / drafted - 1) > stock_memory.EDIT_NOISE
+                            po.lines.append(PurchaseOrderLine(ingredient=ing, drafted_qty=drafted, qty=wanted))
+                        db.add(po)
+                    db.flush()
+                    if mode == "off":
+                        continue
+                    for l in stock_memory.refresh(db, today):
+                        suggestions += 1
+                        kind, _, sid = l.subject.partition(":")
+                        truth = true_lead[int(sid) - 1] if kind == "supplier" else habits[int(sid) - 1]
+                        if abs(l.value - truth) <= 0.1 * truth:
+                            stock_memory.apply(db, l, sent + dt.timedelta(hours=12))
+                        else:
+                            wrong_suggestions += 1
+                            stock_memory.dismiss(l, sent + dt.timedelta(hours=12))
+                    db.flush()
+    lines = stores * weeks * 6
+    return {"stores": stores, "weeks": weeks, "order_lines": lines,
+            "edits_learning_off": totals["off"]["edits"], "edits_learning_on": totals["on"]["edits"],
+            "wrong_lead_weeks_off": totals["off"]["wrong_lead_weeks"], "wrong_lead_weeks_on": totals["on"]["wrong_lead_weeks"],
+            "suggestions": suggestions, "wrong_suggestions": wrong_suggestions}
