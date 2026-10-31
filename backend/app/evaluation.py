@@ -106,6 +106,28 @@ def view(r: dict) -> dict:
                    "smudge_ok": sum(not a["wrong_number"] for a in smudge), "smudge_total": len(smudge),
                    "smudge_said": sum(a["said_unreadable"] for a in smudge)}
 
+    learning = None
+    if "learning" in r and "data_check" in r:
+        sd, sl, dc = r["learning"]["forecast_special_days"], r["learning"]["stock"], r["data_check"]
+        co, cn, sa, v = dc["counts"]["results"]["off"], dc["counts"]["results"]["on"], dc["sales"], dc["verdicts"]
+        learning = {"rows": [
+            {"what": "Forecast learns special days", "before": f"{_pct(sd['error_tagged_off'])}%", "after": f"{_pct(sd['error_tagged_on'])}%",
+             "measure": "Error on days the manager tagged (Eid, payday, promotion), learning off vs on"},
+            {"what": "Stock learns from the manager's edits", "before": str(sl["edits_learning_off"]), "after": str(sl["edits_learning_on"]),
+             "measure": f"Order lines the manager still had to edit, {sl['stores']} simulated stores x {sl['weeks']} weeks"},
+            {"what": "Suggestions the manager had to turn down", "before": "", "after": f"{sl['wrong_suggestions']} of {sl['suggestions']}",
+             "measure": "Learned suggestions are applied only when the manager confirms"}],
+            "checks": [
+            {"what": "Forecast with import mistakes", "before": f"{_pct(sa['error']['no check'])}%", "after": f"{_pct(sa['error']['after the manager decides'])}%",
+             "measure": f"Error on normal days when {sa['mistakes']} days were imported twice or only partly; the check caught {sa['mistakes_caught']}"},
+            {"what": "Stock finds the real waste", "before": str(co["right"]), "after": str(cn["right"]),
+             "measure": f"Stores where the real waste was found, {dc['counts']['stores']} stores with counts typed with a missing zero"}],
+            "verdicts": {"flags": v["flags"], "rows": [
+                {"label": "Rules alone", "right": v["rules"]["right"], "wrong": v["rules"]["wrong"]}]
+                + ([{"label": "Claude alone", "right": v["claude"]["right"], "wrong": v["claude"]["wrong"]},
+                    {"label": "Rules, then Claude (the app)", "right": v["rules_then_claude"]["right"], "wrong": v["rules_then_claude"]["wrong"]}]
+                   if "claude" in v else [])}}
+
     tests = r.get("tests") or {}
     robustness = []
     for text, prefixes in GROUPS:
@@ -136,9 +158,9 @@ def view(r: dict) -> dict:
                    + (f" and read {min(c['value'] for c in invoice['conditions']):.0f}% of invoice lines right." if invoice else ".")})
     return {
         "run": {"at": run["at"], "ai_at": run.get("ai_at"), "ai_model": run.get("ai_model"), "tests_at": tests.get("at")},
-        "summary": {"checks_passed": tests.get("passed"), "checks_total": tests.get("total"), "agents": 4, "cases": cases,
+        "summary": {"checks_passed": tests.get("passed"), "checks_total": tests.get("total"), "agents": 6 if learning else 4, "cases": cases,
                     "fixes": len(r.get("fixes", []))},
         "verdict": {"headline": headline, "points": points},
-        "cashier": cashier, "forecast": forecast, "stock": stock, "invoice": invoice,
+        "cashier": cashier, "forecast": forecast, "stock": stock, "invoice": invoice, "learning": learning,
         "robustness": robustness, "fixes": r.get("fixes", []),
     }

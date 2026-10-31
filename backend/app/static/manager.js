@@ -498,7 +498,7 @@ const VIEWS = {
     const head = (icon, title, sub, chip) => `<div class="ev-head"><span class="ic">${ICONS[icon]}</span><div><h3>${title}</h3><div class="sub">${sub}</div></div>${chip}</div>`;
     return `<div class="hero">
         <div><div class="label">Checks passed</div><div class="value num" style="color:${s.checks_passed === s.checks_total ? "var(--ok)" : "var(--bad)"}">${s.checks_passed ?? "–"}<small> / ${s.checks_total ?? "–"}</small></div></div>
-        <div><div class="label">Agents tested</div><div class="value num">${s.agents}</div></div>
+        <div><div class="label">Parts tested</div><div class="value num">${s.agents}</div></div>
         <div><div class="label">Unseen test cases</div><div class="value num">${s.cases.toLocaleString("en-US")}</div></div>
         <div><div class="label">Fixed by testing</div><div class="value num">${s.fixes}</div></div>
       </div>
@@ -547,6 +547,13 @@ const VIEWS = {
           ${inv.smudge_total ? `<div class="ev-callout">${ICONS.clock}<span>When a number is covered, it ${inv.smudge_said === inv.smudge_total ? "says it can't read it instead of guessing" : "says so or works it out, never guessing a wrong number"} (${inv.smudge_ok} of ${inv.smudge_total}).</span></div>` : ""}
         </div>` : ""}
       </div></div>
+
+      ${e.learning ? `<div class="section"><h2>Learning, and checking the data first</h2><div class="panel">
+        ${e.learning.rows.map((x) => `<div class="ev-fix"><span class="what">${esc(x.what)}</span><span class="delta num">${x.before ? `<s>${esc(x.before)}</s>` : ""}<em>${esc(x.after)}</em></span><small>${esc(x.measure)}</small></div>`).join("")}
+        ${e.learning.checks.map((x) => `<div class="ev-fix"><span class="what">${esc(x.what)}</span><span class="delta num"><s>${esc(x.before)}</s><em>${esc(x.after)}</em></span><small>${esc(x.measure)}</small></div>`).join("")}
+        <div class="ev-fix"><span class="what">Who says if a record is a mistake?</span><span class="delta num"></span><small>${e.learning.verdicts.flags} records with a known truth, right / wrong</small>
+          ${e.learning.verdicts.rows.map((x) => `<div class="ev-verdict"><span>${esc(x.label)}</span><b class="num">${x.right} / ${x.wrong}</b></div>`).join("")}</div>
+      </div></div>` : ""}
 
       ${e.robustness.length ? `<div class="section"><h2>When things go wrong</h2><div class="panel"><ul class="ev-checks">
         ${e.robustness.map((g) => `<li>${g.passed === g.total ? tick : `<span class="ev-tick bad">!</span>`}<span>${esc(g.text)}</span><span class="count num">${g.passed}/${g.total}</span></li>`).join("")}

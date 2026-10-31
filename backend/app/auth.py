@@ -17,6 +17,7 @@ from .models import AuthSession, Device, StaffMember, User, now
 SESSION_COOKIE, DEVICE_COOKIE = "restaura_session", "restaura_device"
 SESSION_HOURS = 12
 PAIRING_MINUTES = 10
+DEMO_PIN = "1111"  # the first sample staff member (see seed.STAFF)
 
 
 def hash_password(password: str, salt: bytes | None = None) -> str:
@@ -86,6 +87,25 @@ def staff_login(db: Session, staff_id: int, pin: str, device_token: str | None) 
     db.add(AuthSession(token_hash=_h(token), user_id=user.id, device_id=device.id, expires=now() + dt.timedelta(hours=SESSION_HOURS)))
     db.commit()
     return token, user
+
+
+def demo_login(db: Session, role: str, device_token: str | None) -> tuple[str, User, str | None]:
+    """Demo mode only: signs in as the manager, or on this device as the first sample staff member, pairing the device
+    as a demo cashier iPad first when it isn't paired yet. Returns (session token, user, new device token or None)."""
+    if role == "manager":
+        user = db.scalar(select(User).where(User.role == "manager").order_by(User.id))
+        token = secrets.token_urlsafe(32)
+        db.add(AuthSession(token_hash=_h(token), user_id=user.id, expires=now() + dt.timedelta(hours=SESSION_HOURS)))
+        db.commit()
+        return token, user, None
+    new_device = None
+    if not device_from_cookie(db, device_token):
+        new_device = secrets.token_urlsafe(32)
+        db.add(Device(name="Demo cashier iPad", token_hash=_h(new_device), paired_at=now()))
+        db.commit()
+    member = db.scalar(select(StaffMember).where(StaffMember.active).order_by(StaffMember.id))
+    token, user = staff_login(db, member.id, DEMO_PIN, new_device or device_token)
+    return token, user, new_device
 
 
 def logout(db: Session, token: str | None) -> None:

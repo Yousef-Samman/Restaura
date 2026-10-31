@@ -137,7 +137,7 @@ One command runs it all and writes the report; CI runs it on every push.
 ```bash
 cd backend
 pip install -r requirements.lock && pip install --no-deps -e .   # the exact versions CI uses
-python -m pytest          # 98 tests: features, robustness, and regression checks on the evaluation
+python -m pytest          # 100 tests: features, robustness, and regression checks on the evaluation
 python -m evals           # held-out evaluation, rules only (no key needed)
 python -m evals --ai      # also the Claude path, with a small model to keep costs low
 ```
@@ -165,6 +165,8 @@ What the tests found and what changed because of them: [`backend/evals/IMPROVEME
 In development. Runs as a demo for one store, using sample data, test recipes and a built-in demo cashier screen. Real supplier invoices and menus are not stored in this public repository.
 
 ## Run it
+
+**Just want to try it or record a demo?** See [`docs/DEMO.md`](docs/DEMO.md): the sign-in page has one-tap buttons in demo mode, and there is a 3-minute script.
 
 ```bash
 cd backend

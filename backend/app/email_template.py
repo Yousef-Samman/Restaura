@@ -59,6 +59,6 @@ def order_email_html(*, store: str, supplier: str, po_id: int, lines: list[tuple
   </td></tr>
   <tr><td style="padding:18px 8px 0;font:12px/1.6 {FONT};color:{MUTED}" align="center">
     Sent {sent_at.strftime("%-d %b %Y, %H:%M")} by {escape(store)} · Prepared by the Restaura stock agent and approved by the manager<br>
-    <span style="color:{OLIVE};font-weight:bold;letter-spacing:.14em">RESTAURA</span> · Eight agents. One restaurant.
+    <span style="color:{OLIVE};font-weight:bold;letter-spacing:.14em">RESTAURA</span> · AI agents for the restaurant.
   </td></tr>
 </table></td></tr></table></body></html>"""

@@ -28,6 +28,9 @@ class Settings:
     cashier_password: str = field(default_factory=lambda: os.getenv("CASHIER_PASSWORD", "cashier-demo"))
     # Time of day (HH:MM, store time) when the stock check runs by itself, e.g. "23:30". Empty means only on demand.
     nightly_stock_check: str | None = field(default_factory=lambda: os.getenv("NIGHTLY_STOCK_CHECK") or None)
+    # Demo mode shows one-tap sign-in buttons and the demo logins on the sign-in page, for people trying the app.
+    # Set DEMO_MODE=0 for a real store.
+    demo_mode: bool = field(default_factory=lambda: os.getenv("DEMO_MODE", "1") == "1")
     secure_cookies: bool = field(default_factory=lambda: os.getenv("SECURE_COOKIES", "0") == "1")
     seed_demo_data: bool = field(default_factory=lambda: os.getenv("SEED_DEMO_DATA", "1") == "1")
 
