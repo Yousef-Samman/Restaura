@@ -1,9 +1,9 @@
 {
  "run": {
-  "at": "2026-10-31T05:00:50+00:00",
+  "at": "2026-10-31T05:54:35+00:00",
   "ai_model": "claude-haiku-5-5",
   "ai_at": "2026-10-31T05:00:50+00:00",
-  "seconds": 815
+  "seconds": 510
  },
  "cashier": {
   "app sample data": {
@@ -769,9 +769,9 @@
   }
  ],
  "tests": {
-  "at": "2026-10-31T05:14:26+00:00",
-  "passed": 93,
-  "total": 93,
+  "at": "2026-10-31T06:03:05+00:00",
+  "passed": 98,
+  "total": 98,
   "cases": [
    {
     "file": "test_auth",
@@ -1236,6 +1236,31 @@
    {
     "file": "test_suppliers",
     "name": "test_ticking_an_ingredient_moves_it_and_a_supplier_with_ingredients_cannot_go",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_throttle",
+    "name": "test_manager_login_locks_after_five_wrong_tries",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_throttle",
+    "name": "test_right_password_resets_the_count",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_throttle",
+    "name": "test_wrong_pins_lock_the_clock",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_throttle",
+    "name": "test_wrong_staff_pins_lock_that_person",
+    "outcome": "passed"
+   },
+   {
+    "file": "test_throttle",
+    "name": "test_lock_ends_by_itself",
     "outcome": "passed"
    }
   ]
