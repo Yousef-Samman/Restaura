@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       ai:
-        description: "Also evaluate the Claude path (uses the RESTAURA_ANTHROPIC_API_KEY secret, small model)"
+        description: "Also evaluate the Claude path on this branch (uses the RESTAURA_ANTHROPIC_API_KEY secret, small model). Pushes to main always do."
         type: boolean
         default: false
 
@@ -29,11 +29,16 @@ jobs:
         run: pytest -q
       - name: Evaluation (rules only, no key)
         run: python -m evals --keep-ai
-      - name: Evaluation with Claude
-        if: github.event_name == 'workflow_dispatch' && inputs.ai
+      - name: Evaluation with Claude (every push to main, or by hand)
+        if: (github.event_name == 'workflow_dispatch' && inputs.ai) || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         env:
           RESTAURA_ANTHROPIC_API_KEY: ${{ secrets.RESTAURA_ANTHROPIC_API_KEY }}
-        run: python -m evals --ai
+        run: |
+          if [ -z "$RESTAURA_ANTHROPIC_API_KEY" ]; then
+            echo "No RESTAURA_ANTHROPIC_API_KEY secret in this repository, so the Claude evaluation is skipped." >> "$GITHUB_STEP_SUMMARY"
+          else
+            python -m evals --ai
+          fi
       - name: Publish the report on the run page
         if: always()
         run: cat evals/RESULTS.md >> "$GITHUB_STEP_SUMMARY"

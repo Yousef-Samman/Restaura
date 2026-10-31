@@ -974,3 +974,11 @@ body.has-hero .mgr-top { padding-bottom: 10px; }
 .tipcard.dc .k { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .tipcard.dc .k .chip { margin-left: auto; text-transform: none; letter-spacing: 0; }
 .tipcard.dc .k .chip:not(.draft):not(.received) { background: var(--cloud); color: var(--ink); }
+
+.demo { margin-top: 18px; padding: 16px; border-radius: 18px; background: var(--paper); border: 1.5px dashed var(--brass, #B8913F); }
+.demo .q { font-weight: 800; margin-bottom: 10px; }
+.demo-grid { display: grid; gap: 10px; }
+.demo .solid { height: 52px; border-radius: 14px; font-weight: 800; font-size: 16px; background: var(--grad); color: #fff; width: 100%; }
+.demo-hint { margin-top: 12px; font-size: 13px; line-height: 1.5; color: var(--muted); display: block; }
+.demo .solid.alt { background: var(--paper); color: var(--brand); border: 1.5px solid var(--brand); box-shadow: none; }
+.ev-verdict { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; margin-top: 6px; }

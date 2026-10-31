@@ -14,7 +14,7 @@
 <main class="auth">
   <div class="box">
     <div class="brand"><span class="mark"><img src="/static/logo.svg" alt=""></span>
-      <div><div class="wordmark">RESTAURA<small>MMXXVI</small></div><div class="tag" id="tag">Eight agents. One restaurant.</div></div></div>
+      <div><div class="wordmark">RESTAURA<small>MMXXVI</small></div><div class="tag" id="tag">AI agents for the restaurant.</div></div></div>
 
     <!-- first page: who is using this device -->
     <div id="choose" class="form" hidden>
@@ -23,6 +23,16 @@
         <button type="button" class="role" id="as-manager"><span class="ic" id="ic-manager"></span><span><b>Manager</b><small>Run the store from your phone or laptop</small></span><span class="chev" data-chev></span></button>
         <button type="button" class="role" id="as-cashier"><span class="ic" id="ic-cashier"></span><span><b>Cashier</b><small>Take orders on the store's iPad</small></span><span class="chev" data-chev></span></button>
       </div>
+    </div>
+
+    <!-- demo mode: try the app in one tap -->
+    <div id="demo" class="demo" hidden>
+      <div class="q">Trying the demo?</div>
+      <div class="demo-grid">
+        <button type="button" class="solid" id="demo-manager">Open the manager app</button>
+        <button type="button" class="solid alt" id="demo-cashier">Open the cashier iPad</button>
+      </div>
+      <div class="demo-hint" id="demo-hint"></div>
     </div>
 
     <form id="login" class="form" hidden>
@@ -136,6 +146,17 @@ $("login").onsubmit = async (e) => {
   try { const r = await post("/api/auth/login", { username: $("u").value, password: $("p").value }); location.href = r.home; }
   catch (x) { $("err").textContent = x.message; $("err").hidden = false; }
 };
+async function demoSignIn(role) {
+  try { const r = await post(`/api/auth/demo/${role}`, {}); location.href = r.home; }
+  catch (x) { $("err").textContent = x.message; $("err").hidden = false; show("login"); }
+}
+$("demo-manager").onclick = () => demoSignIn("manager");
+$("demo-cashier").onclick = () => demoSignIn("cashier");
+fetch("/api/auth/demo").then((r) => r.json()).then((d) => {
+  if (!d.enabled) return;
+  $("demo").hidden = false;
+  $("demo-hint").innerHTML = `Demo logins: <b>manager</b> / <b>${esc(d.manager_password)}</b>, and on the cashier iPad your name with PIN <b>${esc(d.staff_pins)}</b> (Sara is 1111).`;
+}).catch(() => {});
 show("choose");
 refresh();
 </script>
